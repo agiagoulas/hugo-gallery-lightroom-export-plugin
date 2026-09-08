@@ -121,7 +121,10 @@ local function abort( exportContext, message )
 end
 
 local function writeFile( path, contents )
-	local handle, err = io.open( path, 'w' )
+	-- Binary mode deliberately: in text mode Lua on Windows turns every \n into
+	-- \r\n, so the same album would get different line endings depending on who
+	-- exported it. 'wb' keeps the output byte-identical across platforms.
+	local handle, err = io.open( path, 'wb' )
 	if not handle then
 		error( 'Could not write ' .. path .. ': ' .. tostring( err ) )
 	end

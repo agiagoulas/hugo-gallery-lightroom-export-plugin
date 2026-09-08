@@ -17,8 +17,10 @@ a terminal — the most it will do is create a branch and commit.
 
 ## Requirements
 
-Lightroom Classic on macOS, and a Hugo site using hugo-theme-gallery's album layout, in a git
-working copy.
+Lightroom Classic, and a Hugo site using hugo-theme-gallery's album layout, in a git working copy.
+
+Developed and used on macOS. Windows support exists but has never been run by anyone — see
+[docs/windows-port.md](docs/windows-port.md), and the **Test git** button in the Plug-in Manager.
 
 ## Install
 

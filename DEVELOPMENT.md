@@ -25,6 +25,11 @@ the host.
 make test        # needs a Lua 5.1 interpreter: brew install luajit
 ```
 
+That runs two suites. `test-pure.lua` covers those three modules directly. `test-commands.lua`
+covers the git wrapper by stubbing the SDK and loading the real `HugoAlbumRepo`, so what it asserts
+is the exact string that would reach the shell — on both platforms. It is the only way to check the
+Windows quoting without a Windows machine.
+
 Everything else has to be exercised in Lightroom. The log is at
 `~/Library/Logs/Adobe/Lightroom/LrClassicLogs/HugoAlbum.log` — not in `~/Documents/`, which is
 where older tutorials point and the usual reason `LrLogger` looks broken.
@@ -81,6 +86,13 @@ opens.
 
 - **`dateTimeOriginal` is not a Unix timestamp** — it counts seconds from 2001-01-01 UTC, so
   `os.date` on it is about 31 years out. Use `dateTimeOriginalISO8601`, or `LrDate.timeToIsoDate`.
+
+## Platforms
+
+Everything platform-specific sits in one block at the top of `HugoAlbumRepo.lua`, branching on the
+SDK's `WIN_ENV` global: which git to run, whether to prepend a `PATH`, and how to quote. The
+Windows half is written but unverified — [docs/windows-port.md](docs/windows-port.md) covers what
+differs and what the **Test git** button proves.
 
 ## Observed rather than documented
 

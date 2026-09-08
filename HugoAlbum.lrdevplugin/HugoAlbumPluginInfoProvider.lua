@@ -113,6 +113,26 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 				f:static_text { title = '', width = share 'w' },
 				f:static_text { title = bind 'repoStatus', fill_horizontal = 1, height_in_lines = 2 },
 			},
+
+			f:row {
+				f:static_text { title = '', width = share 'w' },
+				f:push_button {
+					title = 'Test git',
+					-- Runs the two command shapes the plug-in builds and shows both
+					-- verbatim. Mainly there so a Windows tester can confirm the
+					-- quoting without a debugger - see docs/windows-port.md.
+					action = function()
+						LrTasks.startAsyncTask( function()
+							local ok, report = Repo.diagnose()
+							log:info( 'git diagnostics:\n' .. report )
+							LrDialogs.message(
+								ok and 'git works' or 'git did not run cleanly',
+								report, ok and 'info' or 'critical' )
+						end )
+					end,
+				},
+				f:static_text { title = 'Checks that git can be run and that paths are quoted correctly.' },
+			},
 		},
 
 		{

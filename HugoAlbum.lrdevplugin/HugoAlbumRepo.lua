@@ -13,22 +13,71 @@ local log  = require 'HugoAlbumLog'
 
 local Repo = {}
 
--- git is invoked by absolute path because Lightroom launched from Finder has a
--- minimal environment.
-local GIT = '/usr/bin/git'
+--[[
+Everything platform-specific in this plug-in lives in this block. WIN_ENV is a
+global the SDK defines; compared with `== true` so that a nil under a plain Lua
+interpreter simply means "not Windows".
 
--- And PATH is prefixed so the repo's own git hooks can find the tools they call.
--- A pre-commit hook that guards image sizes typically starts with something like
+Windows support is experimental and unverified - see docs/windows-port.md, and
+the "Test git" button in the Plug-in Manager, which exists to check exactly the
+quoting produced here.
+]]
+local IS_WIN = WIN_ENV == true
+
+-- On macOS git is invoked by absolute path, because Lightroom launched from
+-- Finder has a minimal environment. Windows programs inherit the system PATH and
+-- the Git for Windows installer puts git on it, so a bare `git` is the normal
+-- case there, with the standard install locations as a fallback.
+local WIN_GIT_CANDIDATES = {
+	'C:\\Program Files\\Git\\cmd\\git.exe',
+	'C:\\Program Files (x86)\\Git\\cmd\\git.exe',
+}
+
+local gitExecutable
+do
+	local cached
+	gitExecutable = function()
+		if cached then return cached end
+		if not IS_WIN then
+			cached = '/usr/bin/git'
+		else
+			for _, candidate in ipairs( WIN_GIT_CANDIDATES ) do
+				if LrFileUtils.exists( candidate ) then cached = candidate break end
+			end
+			cached = cached or 'git'
+		end
+		return cached
+	end
+end
+
+-- macOS only: PATH is prefixed so the repo's own git hooks can find the tools
+-- they call. A pre-commit hook guarding image sizes typically starts with
 --   command -v exiftool >/dev/null || exit 0
 -- and Homebrew is not on the PATH Lightroom inherits - so without this the hook
 -- would find no exiftool and SILENTLY SKIP its check, which is worse than it
--- failing loudly.
-local PATH = 'PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
+-- failing loudly. On Windows the prefix is not merely useless but invalid: it is
+-- sh syntax, and cmd.exe would read it as a program name.
+local MAC_PATH = 'PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'
 
--- POSIX single-quote quoting. Lua's %q escapes for Lua, not for sh: it leaves $
--- and backticks live, so it must not be used here.
-local function sh( s )
-	return "'" .. tostring( s ):gsub( "'", "'\\''" ) .. "'"
+--[[
+Argument quoting.
+
+macOS gets POSIX single quotes. Lua's %q escapes for Lua, not for sh: it leaves
+$ and backticks live, so it must not be used here.
+
+cmd.exe has no single quotes at all, and no escape for a double quote inside a
+quoted argument - so a path containing one is refused rather than silently
+mangled into a different path.
+]]
+local function quote( s )
+	s = tostring( s )
+	if IS_WIN then
+		if s:find( '"', 1, true ) then
+			error( 'cmd.exe cannot quote a path containing a double quote: ' .. s )
+		end
+		return '"' .. s .. '"'
+	end
+	return "'" .. s:gsub( "'", "'\\''" ) .. "'"
 end
 
 -- The repo lives in the plugin's preferences, set once in the Plug-in Manager,
@@ -58,6 +107,40 @@ function Repo.albumRelPath( slug )
 	return tostring( Prefs.get( 'albumsFolder' ) ):gsub( '/+$', '' ) .. '/' .. slug
 end
 
+--[[
+Diagnostics for the Plug-in Manager's "Test git" button.
+
+It runs the two shapes of command the plug-in actually builds: one without a
+path, and one with the site folder - which is where quoting goes wrong first,
+because that path routinely contains spaces. Reports what ran, so a tester can
+paste it back without needing a debugger or any Lua.
+]]
+function Repo.diagnose()
+	local lines = { 'Platform: ' .. ( IS_WIN and 'Windows' or 'macOS' ) }
+	lines[ #lines + 1 ] = 'git: ' .. gitExecutable()
+
+	local ok, output, status, cmd = Repo.git( nil, { '--version' } )
+	lines[ #lines + 1 ] = ''
+	lines[ #lines + 1 ] = cmd
+	lines[ #lines + 1 ] = string.format( '  -> status %s: %s',
+		tostring( status ), ( output:gsub( '%s+$', '' ) ) )
+
+	local path = Repo.configuredPath()
+	if path == '' then
+		lines[ #lines + 1 ] = ''
+		lines[ #lines + 1 ] = 'No site folder set, so the path-quoting half was not tested.'
+	else
+		local ok2, output2, status2, cmd2 = Repo.git( path, { 'rev-parse', '--abbrev-ref', 'HEAD' } )
+		lines[ #lines + 1 ] = ''
+		lines[ #lines + 1 ] = cmd2
+		lines[ #lines + 1 ] = string.format( '  -> status %s: %s',
+			tostring( status2 ), ( output2:gsub( '%s+$', '' ) ) )
+		ok = ok and ok2
+	end
+
+	return ok, table.concat( lines, '\n' )
+end
+
 -- Hugo accepts a lot of names for its configuration, and a repo that has none of
 -- them is almost certainly not the one the user meant to pick.
 local CONFIG_FILES = {
@@ -79,19 +162,34 @@ function Repo.looksLikeHugoSite( repoPath )
 end
 
 --[[
-Runs git in `repoPath`. Returns ok (boolean), output (string), rawStatus.
+Runs git, inside `repoPath` when one is given. Returns ok (boolean), output
+(string), rawStatus, and the command line - the last so the "Test git" button
+can show exactly what ran.
 
-LrTasks.execute gives system()-shaped status on macOS, i.e. commonly
-exitcode * 256. Only `== 0` is a reliable test; never compare against 1.
-Must be called from inside a task.
+LrTasks.execute gives system()-shaped status, commonly exitcode * 256. Only
+`== 0` is a reliable test; never compare against 1. Must be called from inside a
+task.
 ]]
 function Repo.git( repoPath, args )
 	local outFile = LrPathUtils.child( LrPathUtils.getStandardFilePath( 'temp' ),
 		'hugo-album-git-' .. tostring( math.random( 1, 1000000000 ) ) .. '.txt' )
 
-	local parts = { PATH, GIT, '-C', sh( repoPath ) }
-	for _, a in ipairs( args ) do parts[ #parts + 1 ] = sh( a ) end
-	local cmd = table.concat( parts, ' ' ) .. ' > ' .. sh( outFile ) .. ' 2>&1'
+	local parts = {}
+	if not IS_WIN then parts[ #parts + 1 ] = MAC_PATH end
+	parts[ #parts + 1 ] = quote( gitExecutable() )
+	if repoPath and repoPath ~= '' then
+		parts[ #parts + 1 ] = '-C'
+		parts[ #parts + 1 ] = quote( repoPath )
+	end
+	for _, a in ipairs( args ) do parts[ #parts + 1 ] = quote( a ) end
+
+	local cmd = table.concat( parts, ' ' ) .. ' > ' .. quote( outFile ) .. ' 2>&1'
+
+	-- The long-known cmd.exe workaround: when the command line contains quoted
+	-- paths, the whole thing needs one further pair of double quotes around it or
+	-- cmd mis-parses it. Harmless when nothing is quoted, required as soon as the
+	-- site folder or the temp path contains a space - which both routinely do.
+	if IS_WIN then cmd = '"' .. cmd .. '"' end
 
 	local status = LrTasks.execute( cmd )
 
@@ -104,7 +202,7 @@ function Repo.git( repoPath, args )
 	log:info( string.format( 'git %s -> status=%s\n%s',
 		table.concat( args, ' ' ), tostring( status ), output ) )
 
-	return status == 0, output, status
+	return status == 0, output, status, cmd
 end
 
 function Repo.branchExists( repoPath, branch )
