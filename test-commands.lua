@@ -36,7 +36,10 @@ stubs.LrFileUtils = {
 	readFile = function() return 'stub output\n' end,
 	delete = function() end,
 }
-stubs.LrTasks = { execute = function( cmd ) executed = cmd; return 0 end }
+stubs.LrTasks = {
+	execute = function( cmd ) executed = cmd; return 0 end,
+	pcall = function( f, ... ) return pcall( f, ... ) end,
+}
 stubs.LrPrefs = { prefsForPlugin = function() return { repoPath = '' } end }
 stubs.LrDate = { timeToIsoDate = function() return '2026-01-01' end, currentTime = function() return 0 end }
 stubs.LrLogger = function()
@@ -171,6 +174,67 @@ eq( Repo.validate( settings() ), nil, 'consent: irrelevant when the album is new
 existing[ '/site/content/venice' ] = true
 eq( Repo.validate( settings { albumTitle = '' } ), 'Enter an album title.',
 	'consent: a missing title outranks the exists check' )
+
+
+--------------------------------------------------------------------------------
+-- The metadata layer. It was rewritten to read the catalog once per selection
+-- instead of per photo - and, in the sort comparator, per comparison - so it is
+-- worth proving the values still arrive where they are used.
+
+local batchCalls, batchKeys = 0, nil
+local function photo( name, fields )
+	local p = { name = name }
+	p.getRawMetadata = function( self, key ) return fields[ key ] end
+	p.fields = fields
+	return p
+end
+
+local later = photo( 'b.jpg', { dateTimeOriginalISO8601 = '2026-05-04T10:00:00',
+	dateTimeOriginal = 200, fileName = 'b.jpg', rating = 5 } )
+local earlier = photo( 'a.jpg', { dateTimeOriginalISO8601 = '2026-05-02T10:00:00',
+	dateTimeOriginal = 100, fileName = 'a.jpg', rating = 2,
+	gps = { latitude = 45.4408, longitude = 12.3155 } } )
+local shot = { later, earlier }   -- deliberately not in capture order
+
+stubs.LrApplication = { activeCatalog = function()
+	return { batchGetRawMetadata = function( _, photos, keys )
+		batchCalls, batchKeys = batchCalls + 1, keys
+		local out = {}
+		for _, ph in ipairs( photos ) do out[ ph ] = ph.fields end
+		return out
+	end }
+end }
+
+package.loaded[ 'HugoAlbumMetadata' ] = nil
+local Metadata = require 'HugoAlbumMetadata'
+
+local meta = Metadata.read( shot )
+eq( batchCalls, 1, 'metadata: one batch call for the whole selection' )
+eq( #batchKeys >= 7, true, 'metadata: asks for every field the album needs' )
+eq( meta[ earlier ].fileName, 'a.jpg', 'metadata: batch result is keyed by photo' )
+
+local byCapture = Metadata.sortPhotos( shot, 'capture', meta )
+eq( byCapture[ 1 ].name, 'a.jpg', 'sort: capture order, without touching the catalog again' )
+eq( batchCalls, 1, 'sort: the comparator did not re-read the catalog' )
+eq( Metadata.sortPhotos( shot, 'filename', meta )[ 1 ].name, 'a.jpg', 'sort: by filename' )
+eq( Metadata.sortPhotos( shot, 'lightroom', meta )[ 1 ].name, 'b.jpg', 'sort: Lightroom order is left alone' )
+
+local resolved = Metadata.resolve( byCapture, { coverRule = 'rating' }, meta )
+eq( resolved.date, '2026-05-02', 'resolve: earliest capture date' )
+eq( resolved.lat, 45.4408, 'resolve: GPS from the first photo that has it' )
+eq( resolved.coverIndex, 2, 'resolve: highest rating wins, in sequence order' )
+eq( resolved.coverCount, 1, 'resolve: one clear winner' )
+
+-- If the batch call is unavailable the dialog must still work, not die.
+stubs.LrApplication = { activeCatalog = function()
+	return { batchGetRawMetadata = function() error( 'nope' ) end }
+end }
+package.loaded[ 'HugoAlbumMetadata' ] = nil
+Metadata = require 'HugoAlbumMetadata'
+local fallback = Metadata.read( shot )
+eq( fallback[ earlier ].fileName, 'a.jpg', 'metadata: falls back to per-photo reads' )
+eq( Metadata.resolve( shot, { coverRule = 'first' }, fallback ).date, '2026-05-02',
+	'metadata: the fallback carries the same values' )
 
 --------------------------------------------------------------------------------
 

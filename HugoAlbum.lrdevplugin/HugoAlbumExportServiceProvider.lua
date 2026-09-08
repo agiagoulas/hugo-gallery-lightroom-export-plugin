@@ -175,8 +175,10 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	local settings = exportContext.propertyTable
 	local session  = exportContext.exportSession
 
-	local photos = Metadata.sortPhotos( collectPhotos( session ), settings.sequenceBy )
-	local total  = #photos
+	local unordered = collectPhotos( session )
+	local meta      = Metadata.read( unordered )
+	local photos    = Metadata.sortPhotos( unordered, settings.sequenceBy, meta )
+	local total     = #photos
 
 	-- Re-validate rather than trusting LR_cantExportBecause: the dialog's checks
 	-- ran against getTargetPhotos(), and the album folder could have appeared in
@@ -203,7 +205,7 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	local existing = settings.updateExisting and Repo.inspectAlbum( repoPath, slug ) or nil
 	local numbering = Slug.numbering( total, existing )
 
-	local resolved = Metadata.resolve( photos, settings )
+	local resolved = Metadata.resolve( photos, settings, meta )
 	local album    = Metadata.merge( settings, resolved, numbering )
 
 	-- Git decisions up front, while nothing has been written yet.

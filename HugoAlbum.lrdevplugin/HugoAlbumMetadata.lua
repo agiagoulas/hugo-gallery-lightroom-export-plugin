@@ -5,7 +5,9 @@ date, GPS, and which photo is the cover.
 Read-only throughout - nothing here needs catalog write access.
 ]]
 
-local LrDate = import 'LrDate'
+local LrApplication = import 'LrApplication'
+local LrDate        = import 'LrDate'
+local LrTasks       = import 'LrTasks'
 
 local Coords      = require 'HugoAlbumCoords'
 local FrontMatter = require 'HugoAlbumFrontMatter'
@@ -19,14 +21,45 @@ local Metadata = {}
 -- 2001-01-01 UTC, so os.date on it is ~31 years wrong. The ISO8601 variant
 -- sidesteps the arithmetic entirely, and LrDate.timeToIsoDate handles the
 -- fallback correctly.
-local function captureDate( photo )
-	local iso = photo:getRawMetadata( 'dateTimeOriginalISO8601' )
+--[[
+Everything the album needs from the catalog, read once for the whole selection.
+
+Every field below used to be fetched per photo, and the sort comparator fetched
+two of them on every comparison - O(n log n) trips into the catalog where O(n)
+does. One batch call replaces all of it, which also means changing the cover rule
+in the dialog needs no catalog access at all.
+
+Falls back to per-photo reads if the batch call is unavailable: this is the one
+place where a single unsupported key would otherwise take the whole dialog down.
+]]
+local KEYS = {
+	'dateTimeOriginalISO8601', 'dateTimeOriginal', 'fileName',
+	'rating', 'pickStatus', 'colorNameForLabel', 'gps',
+}
+
+function Metadata.read( photos )
+	local catalog = LrApplication.activeCatalog()
+	local ok, batch = LrTasks.pcall( catalog.batchGetRawMetadata, catalog, photos, KEYS )
+	if ok and type( batch ) == 'table' then return batch end
+
+	log:warn( 'batchGetRawMetadata unavailable, falling back to per-photo reads: '
+		.. tostring( batch ) )
+	local meta = {}
+	for _, photo in ipairs( photos ) do
+		local one = {}
+		for _, key in ipairs( KEYS ) do one[ key ] = photo:getRawMetadata( key ) end
+		meta[ photo ] = one
+	end
+	return meta
+end
+
+local function captureDate( m )
+	local iso = m and m.dateTimeOriginalISO8601
 	if type( iso ) == 'string' and #iso >= 10 then
 		return iso:sub( 1, 10 )
 	end
-	local t = photo:getRawMetadata( 'dateTimeOriginal' )
-	if type( t ) == 'number' then
-		return LrDate.timeToIsoDate( t )
+	if type( m and m.dateTimeOriginal ) == 'number' then
+		return LrDate.timeToIsoDate( m.dateTimeOriginal )
 	end
 	return nil
 end
@@ -37,22 +70,30 @@ end
 --
 -- Returns a new list rather than sorting in place: the caller keeps the
 -- original order, so switching the dialog back to 'lightroom' can restore it.
-local function sortPhotos( input, sequenceBy )
+local function sortPhotos( input, sequenceBy, meta )
 	local photos = {}
 	for i, photo in ipairs( input ) do photos[ i ] = photo end
+
+	-- The comparator only ever touches this table, never the catalog: table.sort
+	-- calls it O(n log n) times, and a catalog read in there would be paid that
+	-- many times over for values that cannot change mid-sort.
+	local function of( photo )
+		return meta and meta[ photo ] or {}
+	end
 
 	if sequenceBy == 'capture' then
 		-- Stable via the filename tie-break: two frames from the same second
 		-- still get a deterministic order.
 		table.sort( photos, function( a, b )
-			local ta = a:getRawMetadata( 'dateTimeOriginal' ) or math.huge
-			local tb = b:getRawMetadata( 'dateTimeOriginal' ) or math.huge
+			local ma, mb = of( a ), of( b )
+			local ta = ma.dateTimeOriginal or math.huge
+			local tb = mb.dateTimeOriginal or math.huge
 			if ta ~= tb then return ta < tb end
-			return ( a:getRawMetadata( 'fileName' ) or '' ) < ( b:getRawMetadata( 'fileName' ) or '' )
+			return ( ma.fileName or '' ) < ( mb.fileName or '' )
 		end )
 	elseif sequenceBy == 'filename' then
 		table.sort( photos, function( a, b )
-			return ( a:getRawMetadata( 'fileName' ) or '' ) < ( b:getRawMetadata( 'fileName' ) or '' )
+			return ( of( a ).fileName or '' ) < ( of( b ).fileName or '' )
 		end )
 	end
 	return photos
@@ -71,7 +112,7 @@ custom or localised set returns something other than the six documented English
 names. Hence the case-insensitive comparison - and hence the rules below that
 need no label at all.
 ]]
-local function resolveCover( photos, settings )
+local function resolveCover( photos, settings, meta )
 	local rule = settings.coverRule
 	local n = #photos
 	if n == 0 then return nil, 0 end
@@ -90,7 +131,7 @@ local function resolveCover( photos, settings )
 		-- selection yields no cover rather than picking arbitrarily.
 		local best, index, count = 0, nil, 0
 		for i, photo in ipairs( photos ) do
-			local rating = photo:getRawMetadata( 'rating' ) or 0
+			local rating = ( meta[ photo ] or {} ).rating or 0
 			if rating > best then
 				best, index, count = rating, i, 1
 			elseif rating == best and best > 0 then
@@ -103,13 +144,13 @@ local function resolveCover( photos, settings )
 	-- label / flag: first match wins.
 	local index, count = nil, 0
 	for i, photo in ipairs( photos ) do
+		local m = meta[ photo ] or {}
 		local match
 		if rule == 'flag' then
-			match = photo:getRawMetadata( 'pickStatus' ) == 1
+			match = m.pickStatus == 1
 		else
-			local name = photo:getRawMetadata( 'colorNameForLabel' )
-			match = type( name ) == 'string'
-				and name:lower() == tostring( settings.coverLabel ):lower()
+			match = type( m.colorNameForLabel ) == 'string'
+				and m.colorNameForLabel:lower() == tostring( settings.coverLabel ):lower()
 		end
 		if match then
 			count = count + 1
@@ -132,12 +173,13 @@ Returns:
 	coverIndex  1-based index into `photos`, or nil
 	coverCount  how many photos matched the cover rule (for the summary)
 ]]
-function Metadata.resolve( photos, settings )
+function Metadata.resolve( photos, settings, meta )
 	local result = { coverCount = 0, dates = {} }
 	local seenDate = {}
 
 	for _, photo in ipairs( photos ) do
-		local d = captureDate( photo )
+		local m = meta[ photo ] or {}
+		local d = captureDate( m )
 		if d and ( not result.date or d < result.date ) then
 			result.date = d
 		end
@@ -149,14 +191,14 @@ function Metadata.resolve( photos, settings )
 		end
 
 		if not result.lat then
-			local gps = photo:getRawMetadata( 'gps' )
+			local gps = m.gps
 			if gps and gps.latitude and gps.longitude then
 				result.lat, result.lng = gps.latitude, gps.longitude
 			end
 		end
 	end
 
-	result.coverIndex, result.coverCount = resolveCover( photos, settings )
+	result.coverIndex, result.coverCount = resolveCover( photos, settings, meta )
 
 	table.sort( result.dates )
 

@@ -87,6 +87,20 @@ opens.
 - **`dateTimeOriginal` is not a Unix timestamp** — it counts seconds from 2001-01-01 UTC, so
   `os.date` on it is about 31 years out. Use `dateTimeOriginalISO8601`, or `LrDate.timeToIsoDate`.
 
+## Catalog reads
+
+`Metadata.read` fetches everything the album needs — capture date, filename, rating, pick flag,
+colour label, GPS — in one `catalog:batchGetRawMetadata` call per selection, and everything
+downstream works from that table. Two reasons it is worth keeping that way:
+
+- The sort comparator runs O(n log n) times. Reading the catalog inside it, as it once did, paid
+  for values that cannot change mid-sort thousands of times over on a large selection.
+- The dialog caches the result for the selection, so changing the cover rule or the order costs no
+  catalog access at all.
+
+There is a per-photo fallback if the batch call ever fails, because a single unsupported key would
+otherwise take the whole Export dialog down with it.
+
 ## Platforms
 
 Everything platform-specific sits in one block at the top of `HugoAlbumRepo.lua`, branching on the

@@ -27,6 +27,9 @@ local Sections = {}
 -- tell an untouched field from one the user typed into and leave the latter be.
 local state = {
 	photos = {}, ordered = {}, resolved = nil, autoFilled = {},
+	-- The catalog, read once when the selection is loaded. Changing the cover
+	-- rule or the order then costs no catalog access at all.
+	meta = {},
 	-- Cached result of Repo.validatePaths. The file system can only be touched
 	-- from a task, but LR_cantExportBecause has to be recomputed synchronously
 	-- on every keystroke, so the IO half is cached here and refreshed whenever
@@ -68,8 +71,8 @@ end
 -- Re-reads the catalog. Only called when the selection or a photo-dependent
 -- setting changes, not on every keystroke.
 local function recomputeFromPhotos( propertyTable )
-	state.ordered = Metadata.sortPhotos( state.photos, propertyTable.sequenceBy )
-	state.resolved = Metadata.resolve( state.ordered, propertyTable )
+	state.ordered = Metadata.sortPhotos( state.photos, propertyTable.sequenceBy, state.meta )
+	state.resolved = Metadata.resolve( state.ordered, propertyTable, state.meta )
 
 	-- The dates the selection actually spans, newest last, plus today. There is
 	-- no calendar widget in LrView, and for this job a menu of the real shoot
@@ -272,7 +275,7 @@ function Sections.startDialog( propertyTable )
 
 	-- `state` outlives a single dialog, so reset the cached verdict too: a stale
 	-- "repo is fine" from last time would briefly enable the Export button.
-	state.photos, state.ordered, state.resolved = {}, {}, nil
+	state.photos, state.ordered, state.resolved, state.meta = {}, {}, nil, {}
 	state.repoProblem, state.albumExists = 'Checking the repo...', false
 
 	update( propertyTable )   -- valid state immediately; the preview fills in below
@@ -308,6 +311,7 @@ function Sections.startDialog( propertyTable )
 		end )
 		state.photos = ok and photos or {}
 		if not ok then log:error( 'getTargetPhotos failed: ' .. tostring( photos ) ) end
+		state.meta = Metadata.read( state.photos )
 		log:info( 'dialog opened with ' .. #state.photos .. ' target photos' )
 
 		state.repoProblem, state.albumExists = Repo.validatePaths( propertyTable )
