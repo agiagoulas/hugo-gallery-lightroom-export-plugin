@@ -54,16 +54,35 @@ function Slug.isValid( slug )
 	return type( slug ) == 'string' and slug:match( '^[a-z0-9][a-z0-9%-]*$' ) ~= nil
 end
 
--- Filenames set the album's default display order (sort_by: Name), so they must
--- be zero-padded or "venice-10" sorts before "venice-2". Always at least two
--- digits: 42 photos -> 01..42, 120 photos -> 001..120.
-function Slug.pad( index, total )
-	local digits = math.max( 2, #tostring( total or index ) )
-	return string.format( '%0' .. digits .. 'd', index )
+--[[
+Numbering for one export.
+
+Filenames set the album's default display order (sort_by: Name), so they must be
+zero-padded or "venice-10" sorts before "venice-2". Always at least two digits:
+42 photos -> 01..42, 120 photos -> 001..120.
+
+When adding to an album that already exists, `existing` carries its highest
+number and the width it uses, so new photos continue the sequence in the same
+shape rather than colliding with or reformatting what is there.
+
+`widthGrew` flags the one case this cannot paper over: an album already numbered
+01..99 that grows past 99 needs three digits, and "venice-100" then sorts before
+"venice-99". The caller warns rather than silently renaming the existing files.
+]]
+function Slug.numbering( newCount, existing )
+	local offset = existing and existing.highest or 0
+	local existingWidth = ( existing and existing.width ~= 0 ) and existing.width or nil
+	local width = math.max( 2, #tostring( offset + newCount ), existingWidth or 0 )
+	return {
+		offset = offset,
+		width = width,
+		widthGrew = existingWidth ~= nil and width > existingWidth,
+	}
 end
 
-function Slug.fileName( slug, index, total )
-	return slug .. '-' .. Slug.pad( index, total ) .. '.jpg'
+function Slug.fileName( slug, index, numbering )
+	local number = numbering.offset + index
+	return slug .. '-' .. string.format( '%0' .. numbering.width .. 'd', number ) .. '.jpg'
 end
 
 return Slug

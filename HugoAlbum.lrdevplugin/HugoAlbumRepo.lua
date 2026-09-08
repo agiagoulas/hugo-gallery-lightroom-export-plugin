@@ -275,18 +275,47 @@ function Repo.validatePaths( settings )
 	return nil, exists and true or false
 end
 
--- The whole check, in display order. Only safe from a task.
-function Repo.validate( settings )
-	local repoProblem, albumExists = Repo.validatePaths( settings )
-	if repoProblem then return repoProblem end
+--[[
+Describes an album that is already there, so the export can add to it instead of
+refusing.
 
-	local fieldProblem = Repo.validateFields( settings )
-	if fieldProblem then return fieldProblem end
+	count    how many <slug>-N.jpg files it already holds
+	highest  the largest N in use - new photos continue from there
+	width    how many digits those names use, so the padding stays consistent
+	index    the raw text of index.md, or nil
+]]
+function Repo.inspectAlbum( repoPath, slug )
+	local dir = Repo.albumDir( repoPath, slug )
+	local info = { count = 0, highest = 0, width = 0 }
 
-	if albumExists then
-		return Repo.albumRelPath( settings.slug ) .. ' already exists.'
+	if not LrFileUtils.exists( dir ) then return nil end
+
+	for path in LrFileUtils.files( dir ) do
+		local name = LrPathUtils.leafName( path )
+		local digits = name:match( '^' .. slug:gsub( '%p', '%%%0' ) .. '%-(%d+)%.[jJ][pP][eE]?[gG]$' )
+		if digits then
+			info.count = info.count + 1
+			info.highest = math.max( info.highest, tonumber( digits ) )
+			info.width = math.max( info.width, #digits )
+		end
 	end
-	return nil
+
+	local indexPath = LrPathUtils.child( dir, 'index.md' )
+	if LrFileUtils.exists( indexPath ) then
+		info.index = LrFileUtils.readFile( indexPath )
+	end
+
+	return info
+end
+
+-- The whole check, in display order. Only safe from a task.
+--
+-- An album that already exists is deliberately NOT a problem: the export adds to
+-- it. validatePaths still reports it, so the caller can switch into update mode.
+function Repo.validate( settings )
+	local repoProblem = Repo.validatePaths( settings )
+	if repoProblem then return repoProblem end
+	return Repo.validateFields( settings )
 end
 
 return Repo

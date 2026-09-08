@@ -68,8 +68,24 @@ resources:
   to the first image.
 - **Order** follows Lightroom by default; capture time and filename are also available.
 
-The Export button stays dimmed with the reason underneath until everything is usable and the album
-folder is free, so a misconfiguration cannot leave half an album on disk.
+The Export button stays dimmed with the reason underneath until everything is usable, so a
+misconfiguration cannot leave half an album on disk.
+
+## Adding to an album that already exists
+
+Export with the same title again and the photos are appended: numbering continues from the highest
+one already there (`venice-43.jpg`…), and existing files are never renamed.
+
+`index.md` is **merged, not rewritten**. Title, date, description, categories and coordinates are
+updated from the dialog — and the dialog is prefilled with what the file already says, so you are
+editing rather than retyping. Everything else is preserved exactly: `featured`, `layout`, `menu`, a
+manual `sort_by: Params.weight`, the per-photo `title:` captions and `weight:` params, and any
+Markdown below the front matter. The `resources` block is never rewritten, so **the cover of an
+existing album is left alone** — change it in the file.
+
+Two things follow from "merge never deletes": clearing a field in the dialog keeps whatever the
+file had rather than removing the key, and the title you type wins, which is how you retitle an
+album. The preview names the current title so the change is never invisible.
 
 ## Development
 

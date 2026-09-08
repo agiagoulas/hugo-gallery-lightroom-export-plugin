@@ -11,6 +11,7 @@ local LrTasks       = import 'LrTasks'
 local LrView        = import 'LrView'
 
 local Coords      = require 'HugoAlbumCoords'
+local FrontMatter = require 'HugoAlbumFrontMatter'
 local Metadata    = require 'HugoAlbumMetadata'
 local Prefs       = require 'HugoAlbumPrefs'
 local Repo        = require 'HugoAlbumRepo'
@@ -89,20 +90,33 @@ local function previewText( propertyTable )
 	end
 
 	local repoPath = Repo.configuredPath()
+	local existing = state.existing
+	local numbering = Slug.numbering( n, existing )
+
 	local lines = {
 		string.format( '%d photos: %s ... %s', n,
-			Slug.fileName( slug, 1, n ), Slug.fileName( slug, n, n ) ),
+			Slug.fileName( slug, 1, numbering ), Slug.fileName( slug, n, numbering ) ),
 		-- The repo is set in the Plug-in Manager and not shown above, so name
 		-- the destination here rather than leaving it to be assumed.
 		'Into ' .. ( repoPath ~= '' and ( repoPath .. '/' .. Repo.albumRelPath( slug ) .. '/' ) or '?' ),
 	}
+
+	if existing then
+		local was = existing.values and existing.values.title
+		lines[ #lines + 1 ] = string.format( 'Adding to an existing album of %d photos%s.',
+			existing.count, was and ( ', currently titled "' .. was .. '"' ) or '' )
+		if numbering.widthGrew then
+			lines[ #lines + 1 ] = 'Warning: past ' .. string.rep( '9', numbering.width - 1 )
+				.. ' the filenames need another digit, which breaks sort_by: Name.'
+		end
+	end
 
 	local r = state.resolved
 	if r then
 		if r.coverIndex then
 			local extra = r.coverCount > 1
 				and string.format( ' (%d matched, first wins)', r.coverCount ) or ''
-			lines[ #lines + 1 ] = 'Cover: ' .. Slug.fileName( slug, r.coverIndex, n ) .. extra
+			lines[ #lines + 1 ] = 'Cover: ' .. Slug.fileName( slug, r.coverIndex, numbering ) .. extra
 		elseif propertyTable.coverRule == 'position' then
 			local wanted = tonumber( propertyTable.coverPosition )
 			lines[ #lines + 1 ] = wanted
@@ -146,7 +160,6 @@ local function update( propertyTable )
 	-- an existing album folder only means anything once the slug is valid.
 	propertyTable.LR_cantExportBecause = state.repoProblem
 		or Repo.validateFields( propertyTable )
-		or ( state.albumExists and ( Repo.albumRelPath( propertyTable.slug ) .. ' already exists.' ) )
 		or nil
 	local lat, lng = Coords.parse( propertyTable.location )
 	propertyTable.hasLocation = lat ~= nil
@@ -177,6 +190,34 @@ end
 local function refreshPaths( propertyTable )
 	LrTasks.startAsyncTask( function()
 		state.repoProblem, state.albumExists = Repo.validatePaths( propertyTable )
+
+		-- An album that is already there is not an error any more: the export
+		-- adds to it. Read what is in it so the numbering continues correctly and
+		-- the dialog can be prefilled with the metadata it already carries,
+		-- rather than silently replacing it.
+		state.existing = nil
+		if state.albumExists then
+			state.existing = Repo.inspectAlbum( Repo.configuredPath(), propertyTable.slug )
+			if state.existing and state.existing.index then
+				local values = FrontMatter.readValues( state.existing.index )
+				state.existing.values = values
+				-- Everything except the title. The album was found BY the slug, and
+				-- the slug is derived from the title - so writing the file's title
+				-- back into the field could change the slug, point at a different
+				-- album, and oscillate. The typed title wins instead, which is also
+				-- how you retitle an album; the preview shows the current one so
+				-- the change is never invisible.
+				if values then
+					prefill( propertyTable, 'albumDate', values.date or '' )
+					prefill( propertyTable, 'description', values.description or '' )
+					prefill( propertyTable, 'categories', values.categories or '' )
+					if values.lat and values.lng then
+						prefill( propertyTable, 'location', Coords.format( values.lat, values.lng ) )
+					end
+				end
+			end
+		end
+
 		update( propertyTable )
 	end )
 end

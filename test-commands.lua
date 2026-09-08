@@ -100,6 +100,44 @@ eq( executed:match( '^""(.-)"' ), 'git', 'Windows: falls back to bare git' )
 local ok, err = pcall( Repo.git, 'C:\\bad"path', { 'status' } )
 eq( ok, false, 'Windows: a path containing a double quote is refused, not mangled' )
 
+
+--------------------------------------------------------------------------------
+-- Reading an album that already exists. Filename parsing and "where does the
+-- next photo start" decide whether an append collides with what is there, so it
+-- is worth checking against the real module rather than by eye.
+
+sep, tempDir = '/', '/tmp'
+existing = {
+	['/site/content/venice'] = true,
+	['/site/content/venice/index.md'] = true,
+}
+local files = {
+	'/site/content/venice/venice-01.jpg',
+	'/site/content/venice/venice-09.jpg',
+	'/site/content/venice/venice-42.jpg',
+	'/site/content/venice/index.md',
+	'/site/content/venice/venice-notes.txt',
+	'/site/content/venice/other-07.jpg',
+}
+stubs.LrFileUtils.files = function()
+	local i = 0
+	return function() i = i + 1 ; return files[ i ] end
+end
+stubs.LrPathUtils.leafName = function( p ) return p:match( '[^/]+$' ) end
+stubs.LrPrefs.prefsForPlugin = function()
+	return { repoPath = '/site', albumsFolder = 'content', writeCoordinates = false }
+end
+
+Repo = loadRepo( false )
+local info = Repo.inspectAlbum( '/site', 'venice' )
+eq( info.count, 3, 'inspect: counts only this album\'s photos' )
+eq( info.highest, 42, 'inspect: finds the highest number in use' )
+eq( info.width, 2, 'inspect: reports the padding width already in use' )
+eq( info.index ~= nil, true, 'inspect: reads index.md' )
+
+existing = {}
+eq( Repo.inspectAlbum( '/site', 'nothing-here' ), nil, 'inspect: nil when the album is not there' )
+
 --------------------------------------------------------------------------------
 
 io.write( '\n', failures == 0 and 'all command tests passed\n' or ( failures .. ' FAILURES\n' ) )

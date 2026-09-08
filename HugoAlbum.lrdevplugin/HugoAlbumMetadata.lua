@@ -177,7 +177,7 @@ function Metadata.resolve( photos, settings )
 end
 
 -- The dialog's values win; auto-fill only supplies what was left blank.
-function Metadata.merge( settings, resolved, photoCount )
+function Metadata.merge( settings, resolved, numbering )
 	local album = {}
 
 	album.date = ( settings.albumDate ~= '' and settings.albumDate ) or resolved.date
@@ -195,7 +195,7 @@ function Metadata.merge( settings, resolved, photoCount )
 	end
 
 	if resolved.coverIndex then
-		album.cover = Slug.fileName( settings.slug, resolved.coverIndex, photoCount )
+		album.cover = Slug.fileName( settings.slug, resolved.coverIndex, numbering )
 	end
 
 	return album

@@ -196,8 +196,13 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 		indexByUuid[ photo:getRawMetadata( 'uuid' ) ] = i
 	end
 
+	-- Adding to an album that is already there: continue its numbering rather
+	-- than starting over, and keep its index.md rather than replacing it.
+	local existing  = Repo.inspectAlbum( repoPath, slug )
+	local numbering = Slug.numbering( total, existing )
+
 	local resolved = Metadata.resolve( photos, settings )
-	local album    = Metadata.merge( settings, resolved, total )
+	local album    = Metadata.merge( settings, resolved, numbering )
 
 	-- Git decisions up front, while nothing has been written yet.
 	local branchName, useExistingBranch = nil, false
@@ -215,6 +220,8 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	end
 
 	-- Only remove the directory on failure if this export is what created it.
+	-- Only ever removes a directory this export created. An album that existed
+	-- beforehand is never deleted, however badly the export goes.
 	local createdDir = false
 	local succeeded = false
 	functionContext:addCleanupHandler( function()
@@ -225,7 +232,7 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	end )
 
 	LrFileUtils.createAllDirectories( albumDir )
-	createdDir = true
+	createdDir = ( existing == nil )
 
 	exportContext:configureProgress { title = 'Building album ' .. slug }
 
@@ -243,7 +250,7 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 			error( 'Rendered a photo that was not in the export list.' )
 		end
 
-		local dest = LrPathUtils.child( albumDir, Slug.fileName( slug, i, total ) )
+		local dest = LrPathUtils.child( albumDir, Slug.fileName( slug, i, numbering ) )
 		LrFileUtils.move( pathOrMessage, dest )
 		if not LrFileUtils.exists( dest ) then
 			-- Safety net for a cross-volume temp directory, where move is a copy
@@ -267,17 +274,53 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 			written, total, Repo.albumRelPath( slug ) ) )
 	end
 
-	-- index.md last: an abort mid-render then leaves no half-valid page bundle
-	-- even if the cleanup handler somehow does not run.
-	writeFile( LrPathUtils.child( albumDir, 'index.md' ), FrontMatter.render( album ) )
+	--[[
+	index.md last: an abort mid-render then leaves no half-valid page bundle even
+	if the cleanup handler somehow does not run.
+
+	For an album that already has one, the file is merged rather than rewritten -
+	the managed keys are updated in place and everything else is kept, because
+	that is where per-photo captions, manual ordering, featured/layout/menu and
+	any Markdown body live. A file that cannot be parsed is left completely
+	alone: the photos are still added, and the summary says so.
+	]]
+	local indexPath = LrPathUtils.child( albumDir, 'index.md' )
+	local indexNote
+	if existing and existing.index then
+		local merged = FrontMatter.merge( existing.index, album )
+		if merged then
+			writeFile( indexPath, merged )
+			indexNote = 'index.md updated; captions, ordering and anything else it had were kept.'
+		else
+			indexNote = 'index.md was left untouched - it has no front matter this could merge into.'
+		end
+	else
+		writeFile( indexPath, FrontMatter.render( album ) )
+	end
 	succeeded = true
 
 	--------------------------------------------------------------------------
 
-	local summary = {
-		string.format( '%d photos written to %s/', written, Repo.albumRelPath( slug ) ),
-	}
-	if not album.cover then
+	local summary = {}
+	if existing then
+		summary[ #summary + 1 ] = string.format( '%d photos added to %s/, which now holds %d.',
+			written, Repo.albumRelPath( slug ), existing.count + written )
+		summary[ #summary + 1 ] = 'They are numbered from '
+			.. Slug.fileName( slug, 1, numbering ) .. '.'
+		if numbering.widthGrew then
+			summary[ #summary + 1 ] = 'Warning: the new names need an extra digit, so under '
+				.. 'sort_by: Name they sort before the older ones. Renaming the album by hand '
+				.. 'is the only fix.'
+		end
+	else
+		summary[ #summary + 1 ] = string.format( '%d photos written to %s/',
+			written, Repo.albumRelPath( slug ) )
+	end
+	if indexNote then summary[ #summary + 1 ] = indexNote end
+
+	-- In update mode the resources block is preserved, so the cover is whatever
+	-- the album already had.
+	if not existing and not album.cover then
 		summary[ #summary + 1 ] = 'No cover matched - Hugo will use the first photo.'
 	end
 	-- Only worth mentioning on a site that asked for coordinates in the first
@@ -298,7 +341,8 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 			ok, output = Repo.git( repoPath, { 'add', '--', Repo.albumRelPath( slug ) } )
 		end
 		if ok then
-			ok, output = Repo.git( repoPath, { 'commit', '-m', 'Add ' .. album.title } )
+			local verb = existing and 'Update ' or 'Add '
+			ok, output = Repo.git( repoPath, { 'commit', '-m', verb .. ( album.title or slug ) } )
 		end
 
 		if ok then
