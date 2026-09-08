@@ -1,0 +1,325 @@
+--[[
+Hugo Album export service.
+
+Renders the selected photos at the configured long edge, moves them into
+<albums folder>/<slug>/ under sequential names, writes index.md, and optionally
+creates a branch and commits. It never pushes: on a git-deployed site pushing is
+the deploy, and that stays a deliberate act.
+]]
+
+local LrDialogs   = import 'LrDialogs'
+local LrFileUtils = import 'LrFileUtils'
+local LrPathUtils = import 'LrPathUtils'
+
+local FrontMatter = require 'HugoAlbumFrontMatter'
+local Metadata    = require 'HugoAlbumMetadata'
+local Prefs       = require 'HugoAlbumPrefs'
+local Repo        = require 'HugoAlbumRepo'
+local Sections    = require 'HugoAlbumExportDialogSections'
+local Slug        = require 'HugoAlbumSlug'
+local log         = require 'HugoAlbumLog'
+
+local provider = {}
+
+provider.exportPresetFields      = Sections.exportPresetFields
+provider.startDialog             = Sections.startDialog
+provider.sectionsForTopOfDialog  = Sections.sectionsForTopOfDialog
+
+-- Every one of these is dictated by the repo, so none of them is the user's to
+-- get wrong. Hiding exportLocation additionally makes Lightroom render into a
+-- temp directory it deletes once processRenderedPhotos returns - which is
+-- exactly the staging area we want, since every file gets renamed on the way
+-- into the album folder. LR_export_destinationPathPrefix is never set.
+provider.hideSections = {
+	'exportLocation', 'fileNaming', 'fileSettings', 'imageSettings',
+	'outputSharpening', 'metadata', 'video', 'watermarking',
+}
+provider.allowFileFormats   = { 'JPEG' }
+provider.allowColorSpaces   = { 'sRGB' }
+provider.canExportVideo     = false
+
+function provider.updateExportSettings( exportSettings )
+	exportSettings.LR_format            = 'JPEG'
+	exportSettings.LR_export_colorSpace = 'sRGB'
+	exportSettings.LR_jpeg_quality      = Prefs.number( 'jpegQuality' ) / 100   -- the API wants 0..1
+	exportSettings.LR_jpeg_useLimitSize  = false
+
+	-- In longEdge mode the constraint is read from LR_size_maxHeight; setting
+	-- only maxWidth silently does nothing. Both are set deliberately.
+	--
+	-- Exporting at the site's own cap means any resize-on-commit step the repo
+	-- has finds nothing left to do, and the downscale comes straight from the
+	-- RAW instead of a second JPEG round through some other tool.
+	local longEdge = Prefs.number( 'longEdge' )
+	exportSettings.LR_size_doConstrain     = true
+	exportSettings.LR_size_resizeType      = 'longEdge'
+	exportSettings.LR_size_units           = 'pixels'
+	exportSettings.LR_size_maxHeight       = longEdge
+	exportSettings.LR_size_maxWidth        = longEdge
+	exportSettings.LR_size_doNotEnlarge    = true
+	exportSettings.LR_size_resolution      = 240
+	exportSettings.LR_size_resolutionUnits = 'inch'
+
+	exportSettings.LR_outputSharpeningOn = false
+
+	-- This is what keeps FNumber/ExposureTime/ISO/FocalLength/LensModel/Model
+	-- alive - the fields hugo-theme-gallery builds its lightbox caption from
+	-- ("35mm - f/4 - 1/1600s - ISO 200"), subject to the site's
+	-- [imaging.exif] includeFields.
+	-- LR_minimizeEmbeddedMetadata would override this and strip them.
+	exportSettings.LR_minimizeEmbeddedMetadata = false
+	exportSettings.LR_embeddedMetadataOption   = 'all'
+	exportSettings.LR_metadata_keywordOptions  = 'flat'
+	-- Publishing a photo's own coordinates is rarely intended, and Hugo's
+	-- disableLatLong defaults to hiding them anyway. The album's coordinates are
+	-- a separate, deliberate front-matter field.
+	exportSettings.LR_removeLocationMetadata = true
+
+	exportSettings.LR_renamingTokensOn      = false   -- we name the files ourselves
+	exportSettings.LR_extensionCase         = 'lowercase'
+	exportSettings.LR_collisionHandling     = 'overwrite'
+	exportSettings.LR_reimportExportedPhoto = false
+	exportSettings.LR_includeVideoFiles     = false
+	exportSettings.LR_useWatermark          = false
+end
+
+--------------------------------------------------------------------------------
+
+--[[
+The photos in export order.
+
+Taken from the session's renditions rather than photosToExport() for two
+reasons: it is by definition the exact set that will be rendered, and its
+iteration form is (index, rendition). photosToExport() yields a BARE photo -
+`for photo in ...`, not `for i, photo in ...` - which is easy to write wrongly
+and produces a silently empty list rather than an error.
+]]
+local function collectPhotos( session )
+	local photos = {}
+	for i, rendition in session:renditions() do
+		photos[ i ] = rendition.photo
+	end
+	return photos
+end
+
+-- Bail out. The renditions still have to be consumed or Lightroom waits on an
+-- iterator that never finishes.
+local function abort( exportContext, message )
+	log:error( message )
+
+	-- Report before touching the renditions: if consuming them throws, the user
+	-- has still been told what actually went wrong.
+	LrDialogs.message( 'Hugo Album export cancelled', message, 'critical' )
+
+	-- Iterate the SESSION, not the context. exportContext:renditions() is what
+	-- starts the rendering, and skipRender() is illegal once it has - calling it
+	-- there fails with "must not be called after exportSession has started
+	-- rendering", which then hides the real reason for the abort.
+	for _, rendition in exportContext.exportSession:renditions() do
+		rendition:skipRender()
+	end
+end
+
+local function writeFile( path, contents )
+	local handle, err = io.open( path, 'w' )
+	if not handle then
+		error( 'Could not write ' .. path .. ': ' .. tostring( err ) )
+	end
+	handle:write( contents )
+	handle:close()
+end
+
+-- Picks album/<slug>-2, -3, ... for the case where the obvious name is taken.
+local function freeBranchName( repoPath, base )
+	for n = 2, 50 do
+		local candidate = base .. '-' .. n
+		if not Repo.branchExists( repoPath, candidate ) then return candidate end
+	end
+	return nil
+end
+
+--[[
+Preflight for the git step, run before anything is rendered so a decision about
+branches never has to be made with half an album already on disk.
+
+Returns branchName (possibly changed), or nil to skip the git step entirely.
+]]
+local function planGitStep( repoPath, branchName )
+	if Repo.branchExists( repoPath, branchName ) then
+		local alt = freeBranchName( repoPath, branchName )
+		local choice = LrDialogs.confirm(
+			'Branch ' .. branchName .. ' already exists',
+			'Commit on it, or use a new branch?',
+			alt and ( 'Use ' .. alt ) or 'Use existing',
+			'Skip the git step',
+			'Commit on ' .. branchName )
+		if choice == 'ok' and alt then
+			return alt, false            -- fresh branch album/<slug>-N
+		elseif choice == 'ok' then
+			return branchName, true      -- 50 suffixes taken; fall back to the existing one
+		elseif choice == 'other' then
+			return branchName, true   -- existing branch: commit, do not create
+		else
+			return nil
+		end
+	end
+	return branchName, false
+end
+
+--------------------------------------------------------------------------------
+
+function provider.processRenderedPhotos( functionContext, exportContext )
+	local settings = exportContext.propertyTable
+	local session  = exportContext.exportSession
+
+	local photos = Metadata.sortPhotos( collectPhotos( session ), settings.sequenceBy )
+	local total  = #photos
+
+	-- Re-validate rather than trusting LR_cantExportBecause: the dialog's checks
+	-- ran against getTargetPhotos(), and the album folder could have appeared in
+	-- the meantime.
+	local problem = Repo.validate( settings )
+	if total == 0 then problem = 'No photos to export.' end
+	if problem then
+		return abort( exportContext, problem )
+	end
+
+	local repoPath = Repo.configuredPath()   -- set in the Plug-in Manager
+	local slug     = settings.slug
+	local albumDir = Repo.albumDir( repoPath, slug )
+
+	local indexByUuid = {}
+	for i, photo in ipairs( photos ) do
+		indexByUuid[ photo:getRawMetadata( 'uuid' ) ] = i
+	end
+
+	local resolved = Metadata.resolve( photos, settings )
+	local album    = Metadata.merge( settings, resolved, total )
+
+	-- Git decisions up front, while nothing has been written yet.
+	local branchName, useExistingBranch = nil, false
+	if settings.doGit then
+		if Repo.isDirty( repoPath ) then
+			local choice = LrDialogs.confirm( 'The repo has uncommitted changes',
+				'Only ' .. Repo.albumRelPath( slug ) .. ' will be staged, so nothing else of yours gets '
+				.. 'committed - but the new branch will carry your other changes along.',
+				'Continue', 'Cancel export' )
+			if choice ~= 'ok' then
+				return abort( exportContext, 'Cancelled: the repo has uncommitted changes.' )
+			end
+		end
+		branchName, useExistingBranch = planGitStep( repoPath, settings.branchName )
+	end
+
+	-- Only remove the directory on failure if this export is what created it.
+	local createdDir = false
+	local succeeded = false
+	functionContext:addCleanupHandler( function()
+		if not succeeded and createdDir and LrFileUtils.exists( albumDir ) then
+			log:warn( 'export failed - removing ' .. albumDir )
+			LrFileUtils.delete( albumDir )
+		end
+	end )
+
+	LrFileUtils.createAllDirectories( albumDir )
+	createdDir = true
+
+	exportContext:configureProgress { title = 'Building album ' .. slug }
+
+	local written = 0
+	for _, rendition in exportContext:renditions { stopIfCanceled = true } do
+		local ok, pathOrMessage = rendition:waitForRender()
+		if not ok then
+			error( 'Render failed: ' .. tostring( pathOrMessage ) )
+		end
+
+		-- Index by uuid, not by the loop counter: renditions do not necessarily
+		-- complete in the order the photos were listed.
+		local i = indexByUuid[ rendition.photo:getRawMetadata( 'uuid' ) ]
+		if not i then
+			error( 'Rendered a photo that was not in the export list.' )
+		end
+
+		local dest = LrPathUtils.child( albumDir, Slug.fileName( slug, i, total ) )
+		LrFileUtils.move( pathOrMessage, dest )
+		if not LrFileUtils.exists( dest ) then
+			-- Safety net for a cross-volume temp directory, where move is a copy
+			-- rather than a rename and can fail. Testing the destination rather
+			-- than move's return value keeps this correct whichever convention
+			-- the SDK follows, and never copies from an already-consumed source.
+			LrFileUtils.copy( pathOrMessage, dest )
+			LrFileUtils.delete( pathOrMessage )
+		end
+		if not LrFileUtils.exists( dest ) then
+			error( 'Could not place ' .. dest )
+		end
+		written = written + 1
+	end
+
+	if written < total then
+		-- stopIfCanceled breaks the loop, so this is the ordinary cancel path as
+		-- well as the failure one. Either way the cleanup handler removes the
+		-- half-written directory.
+		error( string.format( 'Stopped after %d of %d photos - %s was removed.',
+			written, total, Repo.albumRelPath( slug ) ) )
+	end
+
+	-- index.md last: an abort mid-render then leaves no half-valid page bundle
+	-- even if the cleanup handler somehow does not run.
+	writeFile( LrPathUtils.child( albumDir, 'index.md' ), FrontMatter.render( album ) )
+	succeeded = true
+
+	--------------------------------------------------------------------------
+
+	local summary = {
+		string.format( '%d photos written to %s/', written, Repo.albumRelPath( slug ) ),
+	}
+	if not album.cover then
+		summary[ #summary + 1 ] = 'No cover matched - Hugo will use the first photo.'
+	end
+	-- Only worth mentioning on a site that asked for coordinates in the first
+	-- place; everywhere else their absence is simply normal.
+	if Prefs.get( 'writeCoordinates' ) and not album.lat then
+		summary[ #summary + 1 ] = 'No coordinates - lat/lng were left out.'
+	end
+
+	if branchName then
+		local ok, output = true, ''
+		if not useExistingBranch then
+			ok, output = Repo.git( repoPath, { 'checkout', '-b', branchName } )
+		else
+			ok, output = Repo.git( repoPath, { 'checkout', branchName } )
+		end
+
+		if ok then
+			ok, output = Repo.git( repoPath, { 'add', '--', Repo.albumRelPath( slug ) } )
+		end
+		if ok then
+			ok, output = Repo.git( repoPath, { 'commit', '-m', 'Add ' .. album.title } )
+		end
+
+		if ok then
+			summary[ #summary + 1 ] = 'Committed on ' .. branchName .. '.'
+			summary[ #summary + 1 ] = ''
+			summary[ #summary + 1 ] = 'Next: preview the site, then'
+			summary[ #summary + 1 ] = '  git push -u origin ' .. branchName
+		else
+			-- Most likely one of the repo's own pre-commit hooks refusing the
+			-- photos; its message already says what to do. The branch and the
+			-- staged files are deliberately left in place to be finished in a
+			-- terminal.
+			LrDialogs.message( 'Commit refused',
+				output ~= '' and output or 'git failed with no output.', 'critical' )
+			summary[ #summary + 1 ] = 'The git step failed - the files are on disk and staged '
+				.. 'on ' .. branchName .. '.'
+		end
+	else
+		summary[ #summary + 1 ] = ''
+		summary[ #summary + 1 ] = 'Next: preview the site, then commit '
+			.. Repo.albumRelPath( slug ) .. '.'
+	end
+
+	LrDialogs.message( 'Album ' .. slug .. ' created', table.concat( summary, '\n' ), 'info' )
+end
+
+return provider
