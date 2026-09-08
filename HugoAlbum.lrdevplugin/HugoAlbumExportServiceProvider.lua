@@ -197,8 +197,10 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	end
 
 	-- Adding to an album that is already there: continue its numbering rather
-	-- than starting over, and keep its index.md rather than replacing it.
-	local existing  = Repo.inspectAlbum( repoPath, slug )
+	-- than starting over, and keep its index.md rather than replacing it. Only
+	-- ever on an explicit tick - validate() has already refused otherwise, and
+	-- this second guard means a stale dialog state cannot append by accident.
+	local existing = settings.updateExisting and Repo.inspectAlbum( repoPath, slug ) or nil
 	local numbering = Slug.numbering( total, existing )
 
 	local resolved = Metadata.resolve( photos, settings )

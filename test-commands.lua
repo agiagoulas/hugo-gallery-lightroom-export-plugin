@@ -138,6 +138,40 @@ eq( info.index ~= nil, true, 'inspect: reads index.md' )
 existing = {}
 eq( Repo.inspectAlbum( '/site', 'nothing-here' ), nil, 'inspect: nil when the album is not there' )
 
+
+--------------------------------------------------------------------------------
+-- Consent before appending. Typing "Dolomites New" passes through the exact slug
+-- "dolomites" on the way, so an album that already exists must never be written
+-- to just because the name momentarily matched.
+
+existing = {
+	['/site/.git'] = true,
+	['/site/hugo.toml'] = true,
+	['/site/content'] = true,
+	['/site/content/venice'] = true,
+}
+Repo = loadRepo( false )
+
+local function settings( extra_fields )
+	local t = { slug = 'venice', albumTitle = 'Venice', albumDate = '2026-05-02', location = '' }
+	for k, v in pairs( extra_fields or {} ) do t[ k ] = v end
+	return t
+end
+
+eq( Repo.validate( settings() ),
+	'content/venice already exists, and "Add to the existing album" is not ticked.',
+	'consent: an existing album is refused by default' )
+eq( Repo.validate( settings { updateExisting = true } ), nil,
+	'consent: ticked, the append is allowed' )
+
+existing[ '/site/content/venice' ] = nil
+eq( Repo.validate( settings() ), nil, 'consent: irrelevant when the album is new' )
+
+-- The field checks still come first, so the message names the real problem.
+existing[ '/site/content/venice' ] = true
+eq( Repo.validate( settings { albumTitle = '' } ), 'Enter an album title.',
+	'consent: a missing title outranks the exists check' )
+
 --------------------------------------------------------------------------------
 
 io.write( '\n', failures == 0 and 'all command tests passed\n' or ( failures .. ' FAILURES\n' ) )

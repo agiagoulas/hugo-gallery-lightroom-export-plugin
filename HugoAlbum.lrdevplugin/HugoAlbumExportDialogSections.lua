@@ -47,6 +47,7 @@ Sections.exportPresetFields = {
 	{ key = 'coverLabel',   default = 'red' },
 	{ key = 'coverPosition', default = 1 },
 	{ key = 'sequenceBy',   default = 'lightroom' },
+	{ key = 'updateExisting', default = false },
 	{ key = 'doGit',        default = true },
 	{ key = 'branchName',   default = '' },
 	{ key = 'branchManual', default = false },
@@ -91,7 +92,7 @@ local function previewText( propertyTable )
 
 	local repoPath = Repo.configuredPath()
 	local existing = state.existing
-	local numbering = Slug.numbering( n, existing )
+	local numbering = Slug.numbering( n, propertyTable.updateExisting and existing or nil )
 
 	local lines = {
 		string.format( '%d photos: %s ... %s', n,
@@ -103,8 +104,11 @@ local function previewText( propertyTable )
 
 	if existing then
 		local was = existing.values and existing.values.title
-		lines[ #lines + 1 ] = string.format( 'Adding to an existing album of %d photos%s.',
-			existing.count, was and ( ', currently titled "' .. was .. '"' ) or '' )
+		local what = string.format( '%d photos%s', existing.count,
+			was and ( ', currently titled "' .. was .. '"' ) or '' )
+		lines[ #lines + 1 ] = propertyTable.updateExisting
+			and ( 'Adding to an existing album of ' .. what .. '.' )
+			or ( 'That album already exists (' .. what .. ').' )
 		if numbering.widthGrew then
 			lines[ #lines + 1 ] = 'Warning: past ' .. string.rep( '9', numbering.width - 1 )
 				.. ' the filenames need another digit, which breaks sort_by: Name.'
@@ -158,8 +162,14 @@ local function update( propertyTable )
 	--
 	-- Display order: a bad repo path outranks a missing title, but an existing
 	-- an existing album folder only means anything once the slug is valid.
+	-- Appending to an album that is already there is never something to arrive at
+	-- by accident, so it stays blocked until the box is ticked for that album.
+	propertyTable.albumExists = state.albumExists == true
 	propertyTable.LR_cantExportBecause = state.repoProblem
 		or Repo.validateFields( propertyTable )
+		or ( state.albumExists and not propertyTable.updateExisting
+			and ( Repo.albumRelPath( propertyTable.slug )
+				.. ' already exists. Tick "Add to the existing album", or change the title.' ) )
 		or nil
 	local lat, lng = Coords.parse( propertyTable.location )
 	propertyTable.hasLocation = lat ~= nil
@@ -187,37 +197,52 @@ local function refresh( propertyTable )
 end
 
 -- Same reason: Repo.validatePaths stats the file system.
-local function refreshPaths( propertyTable )
-	LrTasks.startAsyncTask( function()
-		state.repoProblem, state.albumExists = Repo.validatePaths( propertyTable )
+--[[
+Copies an existing album's metadata into the dialog, or takes it back out again.
 
-		-- An album that is already there is not an error any more: the export
-		-- adds to it. Read what is in it so the numbering continues correctly and
-		-- the dialog can be prefilled with the metadata it already carries,
-		-- rather than silently replacing it.
-		state.existing = nil
-		if state.albumExists then
-			state.existing = Repo.inspectAlbum( Repo.configuredPath(), propertyTable.slug )
-			if state.existing and state.existing.index then
-				local values = FrontMatter.readValues( state.existing.index )
-				state.existing.values = values
-				-- Everything except the title. The album was found BY the slug, and
-				-- the slug is derived from the title - so writing the file's title
-				-- back into the field could change the slug, point at a different
-				-- album, and oscillate. The typed title wins instead, which is also
-				-- how you retitle an album; the preview shows the current one so
-				-- the change is never invisible.
-				if values then
-					prefill( propertyTable, 'albumDate', values.date or '' )
-					prefill( propertyTable, 'description', values.description or '' )
-					prefill( propertyTable, 'categories', values.categories or '' )
-					if values.lat and values.lng then
-						prefill( propertyTable, 'location', Coords.format( values.lat, values.lng ) )
-					end
-				end
+Only ever runs on an explicit tick of "Add to the existing album". Doing it
+automatically was wrong: typing "Dolomites New" passes through the exact slug
+"dolomites" on the way, and the dialog would quietly absorb that album's date,
+description and categories into what is meant to be a new one.
+
+The title is never copied. The album is found BY the slug and the slug derives
+from the title, so writing the file's title back into the field could point at a
+different album and oscillate. The typed title wins, which is also how an album
+is retitled; the preview names the current one so the change stays visible.
+]]
+local function applyExistingValues( propertyTable )
+	local values = propertyTable.updateExisting and state.existing and state.existing.values
+	prefill( propertyTable, 'albumDate', values and values.date or '' )
+	prefill( propertyTable, 'description', values and values.description or '' )
+	prefill( propertyTable, 'categories', values and values.categories or '' )
+	prefill( propertyTable, 'location',
+		( values and values.lat and values.lng ) and Coords.format( values.lat, values.lng ) or '' )
+end
+
+local function refreshPaths( propertyTable )
+	-- The slug this run is about. Everything below works from the snapshot, never
+	-- from the live property, because the user goes on typing while it runs.
+	local wanted = propertyTable.slug
+	local snapshot = { slug = wanted }
+
+	LrTasks.startAsyncTask( function()
+		local problem, exists = Repo.validatePaths( snapshot )
+
+		local existing
+		if exists then
+			existing = Repo.inspectAlbum( Repo.configuredPath(), wanted )
+			if existing and existing.index then
+				existing.values = FrontMatter.readValues( existing.index )
 			end
 		end
 
+		-- Another keystroke may have landed while the file system was being read.
+		-- Its own task owns the state now; finishing this one would leave the
+		-- dialog describing an album the user has already typed past - including
+		-- a photo count that would start the numbering in the wrong place.
+		if propertyTable.slug ~= wanted then return end
+
+		state.repoProblem, state.albumExists, state.existing = problem, exists, existing
 		update( propertyTable )
 	end )
 end
@@ -240,6 +265,7 @@ function Sections.startDialog( propertyTable )
 	-- this one.
 	propertyTable.albumDate, propertyTable.location = '', ''
 	propertyTable.hasLocation, propertyTable.locationEcho = false, ''
+	propertyTable.updateExisting, propertyTable.albumExists = false, false
 	state.autoFilled = {}
 
 	propertyTable.dateChoices = {}   -- filled once the catalog has been read
@@ -257,7 +283,15 @@ function Sections.startDialog( propertyTable )
 	-- The slug decides where the album would land, so it needs the file-system
 	-- checks redone. The repo itself is fixed for the session - it is set in the
 	-- Plug-in Manager, not here.
-	propertyTable:addObserver( 'slug', function() refreshPaths( propertyTable ) end )
+	propertyTable:addObserver( 'slug', function()
+		-- Consent is per album: a different slug is a different decision.
+		propertyTable.updateExisting = false
+		refreshPaths( propertyTable )
+	end )
+	propertyTable:addObserver( 'updateExisting', function()
+		applyExistingValues( propertyTable )
+		update( propertyTable )
+	end )
 	for _, key in ipairs { 'coverRule', 'coverLabel', 'coverPosition', 'sequenceBy' } do
 		propertyTable:addObserver( key, function() refresh( propertyTable ) end )
 	end
@@ -357,6 +391,18 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 					title = 'Edit manually',
 					value = bind 'slugManual',
 					tooltip = 'Off: the slug follows the title.',
+				},
+			},
+
+			f:row {
+				f:static_text { title = '', width = share 'label_width' },
+				f:checkbox {
+					title = 'Add to the existing album',
+					value = bind 'updateExisting',
+					enabled = bind 'albumExists',
+					tooltip = 'Appends the photos and merges index.md instead of refusing. '
+						.. 'Clears itself whenever the slug changes, so consent is never '
+						.. 'carried from one album to another.',
 				},
 			},
 

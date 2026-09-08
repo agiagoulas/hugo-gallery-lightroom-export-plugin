@@ -73,8 +73,13 @@ misconfiguration cannot leave half an album on disk.
 
 ## Adding to an album that already exists
 
-Export with the same title again and the photos are appended: numbering continues from the highest
-one already there (`venice-43.jpg`…), and existing files are never renamed.
+When the title you type resolves to an album that is already there, the Export button stays dimmed
+and says so. Tick **Add to the existing album** and the photos are appended: numbering continues
+from the highest one already there (`venice-43.jpg`…), and existing files are never renamed.
+
+The tick is deliberate, and it clears itself whenever the slug changes — typing *Dolomites New*
+passes through the exact slug `dolomites` on the way, and appending to that album, or absorbing its
+metadata, is never what you meant.
 
 `index.md` is **merged, not rewritten**. Title, date, description, categories and coordinates are
 updated from the dialog — and the dialog is prefilled with what the file already says, so you are

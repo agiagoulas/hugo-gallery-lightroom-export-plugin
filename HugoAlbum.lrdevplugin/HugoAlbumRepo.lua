@@ -310,12 +310,21 @@ end
 
 -- The whole check, in display order. Only safe from a task.
 --
--- An album that already exists is deliberately NOT a problem: the export adds to
--- it. validatePaths still reports it, so the caller can switch into update mode.
+-- An album that already exists is only allowed when `updateExisting` says so.
+-- Checked here as well as in the dialog, because the dialog's own check runs
+-- asynchronously and the answer could be a keystroke out of date by now.
 function Repo.validate( settings )
-	local repoProblem = Repo.validatePaths( settings )
+	local repoProblem, albumExists = Repo.validatePaths( settings )
 	if repoProblem then return repoProblem end
-	return Repo.validateFields( settings )
+
+	local fieldProblem = Repo.validateFields( settings )
+	if fieldProblem then return fieldProblem end
+
+	if albumExists and not settings.updateExisting then
+		return Repo.albumRelPath( settings.slug )
+			.. ' already exists, and "Add to the existing album" is not ticked.'
+	end
+	return nil
 end
 
 return Repo
