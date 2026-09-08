@@ -55,9 +55,23 @@ function Prefs.get( key )
 	return value
 end
 
+-- Bounds for the numeric settings. These are free-text fields, so a slip of the
+-- keyboard would otherwise reach the export API directly: a long edge of 0 or a
+-- quality of 900 (which becomes LR_jpeg_quality 9.0, far outside its 0..1 range)
+-- would break every photo in the album without ever looking like an error.
+local RANGES = {
+	longEdge = { min = 240, max = 10000 },
+	jpegQuality = { min = 1, max = 100 },
+}
+
 -- Numbers arrive from edit fields as strings.
 function Prefs.number( key )
-	return tonumber( Prefs.get( key ) ) or Prefs.DEFAULTS[ key ]
+	local value = tonumber( Prefs.get( key ) ) or Prefs.DEFAULTS[ key ]
+	local range = RANGES[ key ]
+	if range then
+		value = math.max( range.min, math.min( range.max, value ) )
+	end
+	return value
 end
 
 return Prefs

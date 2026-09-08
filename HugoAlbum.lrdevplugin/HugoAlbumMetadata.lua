@@ -31,8 +31,6 @@ local function captureDate( photo )
 	return nil
 end
 
-Metadata.captureDate = captureDate
-
 -- Sort helpers for the `sequenceBy` setting. photosToExport() order is what the
 -- filmstrip shows, which is normally what you want - but it is not documented,
 -- hence the two explicit alternatives.

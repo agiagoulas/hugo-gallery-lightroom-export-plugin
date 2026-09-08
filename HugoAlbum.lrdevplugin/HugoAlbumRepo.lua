@@ -31,8 +31,6 @@ local function sh( s )
 	return "'" .. tostring( s ):gsub( "'", "'\\''" ) .. "'"
 end
 
-Repo.shellQuote = sh
-
 -- The repo lives in the plugin's preferences, set once in the Plug-in Manager,
 -- rather than in the export settings: it is a property of this machine, not of
 -- an album, and re-picking it per export (or per export preset) is exactly the
@@ -109,12 +107,6 @@ function Repo.git( repoPath, args )
 	return status == 0, output, status
 end
 
-function Repo.currentBranch( repoPath )
-	local ok, out = Repo.git( repoPath, { 'rev-parse', '--abbrev-ref', 'HEAD' } )
-	if not ok then return nil end
-	return ( out:gsub( '%s+$', '' ) )
-end
-
 function Repo.branchExists( repoPath, branch )
 	local ok = Repo.git( repoPath, { 'rev-parse', '--verify', '--quiet', 'refs/heads/' .. branch } )
 	return ok
@@ -148,8 +140,12 @@ function Repo.validateFields( settings )
 	if not tostring( settings.albumDate ):match( '^%d%d%d%d%-%d%d%-%d%d$' ) then
 		return 'Date must be YYYY-MM-DD.'
 	end
+	-- Only when the Location field is actually on screen. Otherwise a value left
+	-- over from when coordinates were enabled would dim the Export button over a
+	-- field the user cannot see, with no way out.
 	local location = settings.location or ''
-	if location:match( '^%s*$' ) == nil and not Coords.parse( location ) then
+	if Prefs.get( 'writeCoordinates' ) and location:match( '^%s*$' ) == nil
+		and not Coords.parse( location ) then
 		return 'Could not read those coordinates. Use "45.4408, 12.3155" or 46°32\'25.8"N 12°08\'08.5"E.'
 	end
 

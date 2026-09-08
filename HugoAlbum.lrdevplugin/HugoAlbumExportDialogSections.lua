@@ -11,7 +11,6 @@ local LrTasks       = import 'LrTasks'
 local LrView        = import 'LrView'
 
 local Coords      = require 'HugoAlbumCoords'
-local FrontMatter = require 'HugoAlbumFrontMatter'
 local Metadata    = require 'HugoAlbumMetadata'
 local Prefs       = require 'HugoAlbumPrefs'
 local Repo        = require 'HugoAlbumRepo'
@@ -43,7 +42,7 @@ Sections.exportPresetFields = {
 	{ key = 'categories',   default = '' },
 	{ key = 'albumDate',    default = '' },
 	{ key = 'location',     default = '' },
-	{ key = 'coverRule',    default = 'label' },
+	{ key = 'coverRule',    default = 'rating' },
 	{ key = 'coverLabel',   default = 'red' },
 	{ key = 'coverPosition', default = 1 },
 	{ key = 'sequenceBy',   default = 'lightroom' },

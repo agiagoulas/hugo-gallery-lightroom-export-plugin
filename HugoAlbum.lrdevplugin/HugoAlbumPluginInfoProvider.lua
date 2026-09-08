@@ -124,9 +124,9 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 					value = pref 'longEdge',
 					immediate = true,
 					width_in_chars = 6,
-					tooltip = 'Pixels. hugo-theme-gallery never serves more than 1600px, so 2048 '
-						.. 'is invisible on the page while leaving headroom - and small enough '
-						.. 'that the photos can live in git.',
+					tooltip = 'Pixels, 240-10000. hugo-theme-gallery never serves more than '
+						.. '1600px, so 2048 is invisible on the page while leaving headroom - '
+						.. 'and small enough that the photos can live in git.',
 				},
 				f:static_text { title = 'px' },
 				f:static_text { title = 'Quality:' },
@@ -155,10 +155,40 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 			title = 'About',
 
 			f:static_text {
-				title = 'Exports the selected photos into your Hugo site as an album bundle,\n'
-					.. 'with a ready-made index.md. Nothing is pushed: on a git-deployed site\n'
-					.. 'pushing is the deploy, and that stays a deliberate act.',
-				height_in_lines = 3,
+				title = 'Turns a Lightroom selection into a finished album on a Hugo site. It\n'
+					.. 'exports the photos at the right size, names them in order, and writes\n'
+					.. 'the front matter - the manual steps between "the edit is done" and\n'
+					.. '"the album is on the site".',
+				height_in_lines = 4,
+			},
+
+			f:spacer { height = 8 },
+
+			f:static_text {
+				title = 'An album titled Venice becomes venice/, holding venice-01.jpg through\n'
+					.. 'venice-42.jpg and an index.md carrying the title, date, categories,\n'
+					.. 'description and which photo is the cover. Filenames are zero-padded, so\n'
+					.. 'the theme\'s sort_by: Name still orders them correctly past nine, and the\n'
+					.. 'photos keep the EXIF the lightbox captions are built from.',
+				height_in_lines = 5,
+			},
+
+			f:spacer { height = 8 },
+
+			f:static_text {
+				title = 'Your RAWs are untouched - these are exports like any other. And nothing\n'
+					.. 'is pushed: on a git-deployed site pushing is the deploy, so that stays a\n'
+					.. 'deliberate act in a terminal. The most this will do is create a branch\n'
+					.. 'and commit, and only if you ask it to.',
+				height_in_lines = 4,
+			},
+
+			f:spacer { height = 8 },
+
+			f:static_text {
+				title = 'Needs a Hugo site built on hugo-theme-gallery, in a git working copy.\n'
+					.. 'Set the site folder above; everything else already has a sensible default.',
+				height_in_lines = 2,
 			},
 
 			f:spacer { height = 8 },
