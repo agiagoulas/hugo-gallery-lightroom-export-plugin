@@ -245,21 +245,56 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 		branchName, useExistingBranch = planGitStep( repoPath, settings.branchName )
 	end
 
-	-- Only ever removes a directory this export created. An album that existed
-	-- beforehand is never deleted, however badly the export goes.
 	local createdDir = false
 	local succeeded = false
+	local written, failures, takenBy = 0, {}, {}
+	local reported = false
+	local progress
+
+	--[[
+	Tidying up and reporting both live here, because this is the one place that
+	runs however the export ends.
+
+	A cancel does not necessarily fall out of the rendition loop and continue: the
+	SDK does not say whether `stopIfCanceled` returns or unwinds, and in practice
+	nothing after the loop ran - which is why cancelling used to finish in
+	silence. A cleanup handler runs on both paths.
+	]]
 	functionContext:addCleanupHandler( function()
+		-- Only ever removes a directory this export created. An album that
+		-- existed beforehand is never deleted, however badly the export goes.
 		if not succeeded and createdDir and LrFileUtils.exists( albumDir ) then
-			log:warn( 'export failed - removing ' .. albumDir )
+			log:warn( 'export did not complete - removing ' .. albumDir )
 			LrFileUtils.delete( albumDir )
 		end
+
+		if succeeded or reported then return end
+		reported = true
+
+		local removed = createdDir
+			and ( ' ' .. Repo.albumRelPath( slug ) .. ' was removed.' )
+			or ( ' The photos already added were left in place.' )
+
+		local cancelled = #failures == 0 and ( not progress or progress:isCanceled() )
+		local message
+		if cancelled then
+			message = string.format( 'Cancelled after %d of %d photos.%s', written, total, removed )
+		else
+			message = string.format( 'Wrote %d of %d photos.%s\n\n%s',
+				written, total, removed, table.concat( failures, '\n' ) )
+		end
+
+		log:warn( message )
+		LrDialogs.message( 'Album ' .. slug .. ' was not completed', message,
+			cancelled and 'info' or 'critical' )
 	end )
 
 	LrFileUtils.createAllDirectories( albumDir )
 	createdDir = ( existing == nil )
 
-	exportContext:configureProgress { title = 'Building album ' .. slug }
+	-- Kept, rather than discarded as it was: it is the only reliable way to tell
+	-- "the user cancelled" from "something went wrong" once the loop has ended.
+	progress = exportContext:configureProgress { title = 'Building album ' .. slug }
 
 	--[[
 	A rendition that goes wrong is reported to Lightroom and the loop carries on.
@@ -269,8 +304,6 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	is the hang this file warns about at the top. Failures are collected and
 	reported once, after the iterator has drained.
 	]]
-	local written, failures, takenBy = 0, {}, {}
-
 	for _, rendition in exportContext:renditions { stopIfCanceled = true } do
 		local function fail( message )
 			log:error( message )
@@ -320,28 +353,9 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 		end
 	end
 
-	if written < total then
-		-- Two different endings. stopIfCanceled breaks the loop with nothing
-		-- wrong, and telling the user their own Cancel was an internal error is
-		-- its own small insult; a genuine failure lists what went wrong.
-		local removed = createdDir
-			and ( ' ' .. Repo.albumRelPath( slug ) .. ' was removed.' )
-			or ( ' The photos already added were left in place.' )
-
-		local message
-		if #failures > 0 then
-			message = string.format( 'Wrote %d of %d photos.%s\n\n%s',
-				written, total, removed, table.concat( failures, '\n' ) )
-		else
-			message = string.format( 'Cancelled after %d of %d photos.%s',
-				written, total, removed )
-		end
-
-		log:warn( message )
-		LrDialogs.message( 'Album ' .. slug .. ' was not completed', message,
-			#failures > 0 and 'critical' or 'info' )
-		return
-	end
+	-- Nothing to report here: the cleanup handler owns that, so the message is
+	-- the same whether this returns or the loop unwound past it.
+	if written < total then return end
 
 	--[[
 	index.md last: an abort mid-render then leaves no half-valid page bundle even
