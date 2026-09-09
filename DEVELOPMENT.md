@@ -54,8 +54,11 @@ Each of these is also commented at the point in the code where it matters. They 
 because every one of them fails *silently* — no error, just wrong output or a dialog that never
 opens.
 
-- **`LR_size_maxHeight` is what constrains `longEdge`**, not `LR_size_maxWidth`. Setting only the
-  width does nothing at all.
+- **The size cap is on the short edge, and both `LR_size_maxHeight` and `LR_size_maxWidth` carry
+  it.** Which one Lightroom reads for a `shortEdge` resize is not documented, so setting them to
+  the same number is load-bearing rather than belt-and-braces. The value string `shortEdge` is not
+  a guess — it appears in Lightroom's own `Export.lrmodule/…/ExportImageSizingSection.lua`
+  alongside `dimensions`, `longEdge`, `megapixels` and `percentage`.
 
 - **Nothing that can yield may run in `startDialog` or a property observer.** An observer runs
   inside the property table's assignment metamethod, and Lua 5.1 cannot yield across a C boundary
