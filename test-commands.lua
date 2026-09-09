@@ -236,6 +236,72 @@ eq( fallback[ earlier ].fileName, 'a.jpg', 'metadata: falls back to per-photo re
 eq( Metadata.resolve( shot, { coverRule = 'first' }, fallback ).date, '2026-05-02',
 	'metadata: the fallback carries the same values' )
 
+
+--------------------------------------------------------------------------------
+-- Preferences that reach the filesystem and git. albumsFolder is free text and
+-- decides where albums are written; the numeric fields go straight into the
+-- export API.
+
+package.loaded[ 'HugoAlbumPrefs' ] = nil
+package.loaded[ 'HugoAlbumRepo' ] = nil
+local prefsTable = { repoPath = '/site', albumsFolder = 'content' }
+stubs.LrPrefs.prefsForPlugin = function() return prefsTable end
+local Prefs = require 'HugoAlbumPrefs'
+Repo = require 'HugoAlbumRepo'
+
+local function folder( value )
+	prefsTable.albumsFolder = value
+	local cleaned, ok = Prefs.folder( 'albumsFolder' )
+	return cleaned .. ( ok and '' or ' [rejected]' )
+end
+
+eq( folder( 'content' ), 'content', 'folder: the ordinary case' )
+eq( folder( 'content/albums' ), 'content/albums', 'folder: nested section' )
+eq( folder( 'content/' ), 'content', 'folder: trailing slash trimmed' )
+eq( folder( 'content//albums' ), 'content/albums', 'folder: doubled slash collapsed' )
+eq( folder( '' ), 'content', 'folder: empty falls back to the default, not the repo root' )
+eq( folder( '  ' ), 'content', 'folder: whitespace is empty' )
+eq( folder( '/content' ), 'content [rejected]', 'folder: absolute paths are refused' )
+eq( folder( 'C:/content' ), 'content [rejected]', 'folder: drive letters are refused' )
+eq( folder( 'content/../..' ), 'content [rejected]', 'folder: cannot climb out of the site' )
+eq( folder( 'content\\albums' ), 'content/albums', 'folder: backslashes are normalised' )
+
+prefsTable.albumsFolder = 'content/albums'
+eq( Repo.albumRelPath( 'venice' ), 'content/albums/venice', 'folder: git sees a clean relative path' )
+prefsTable.albumsFolder = '/content'
+eq( Repo.albumRelPath( 'venice' ), 'content/venice', 'folder: a rejected value cannot reach git' )
+prefsTable.albumsFolder = 'content'
+
+local function number( key, value )
+	prefsTable[ key ] = value
+	return Prefs.number( key )
+end
+eq( number( 'longEdge', '0' ), 240, 'clamp: a long edge of 0 would export nothing' )
+eq( number( 'longEdge', '99999' ), 10000, 'clamp: upper bound' )
+eq( number( 'longEdge', 'abc' ), 2048, 'clamp: nonsense falls back to the default' )
+eq( number( 'longEdge', '' ), 2048, 'clamp: empty falls back to the default' )
+eq( number( 'jpegQuality', '900' ), 100, 'clamp: 900 would become LR_jpeg_quality 9.0' )
+eq( number( 'jpegQuality', '0' ), 1, 'clamp: lower bound' )
+eq( number( 'jpegQuality', '92' ), 92, 'clamp: a sane value is untouched' )
+prefsTable.longEdge, prefsTable.jpegQuality = 2048, 92
+
+--------------------------------------------------------------------------------
+-- Committing only the album. The dialog promises that nothing else of the
+-- user's gets committed; without the pathspec on the commit that is false.
+
+local commands = {}
+local realExecute = stubs.LrTasks.execute
+stubs.LrTasks.execute = function( cmd ) commands[ #commands + 1 ] = cmd ; return realExecute( cmd ) end
+
+Repo.commitAlbum( '/site', 'content/venice', 'Add Venice' )
+eq( #commands, 2, 'commit: stages then commits' )
+eq( commands[ 1 ]:match( "git' (.-) > " ), "-C '/site' 'add' '--' 'content/venice'",
+	'commit: the add is limited to the album' )
+eq( commands[ 2 ]:match( "git' (.-) > " ),
+	"-C '/site' 'commit' '-m' 'Add Venice' '--' 'content/venice'",
+	'commit: and so is the commit, so nothing already staged rides along' )
+stubs.LrTasks.execute = realExecute
+
 --------------------------------------------------------------------------------
 
 io.write( '\n', failures == 0 and 'all command tests passed\n' or ( failures .. ' FAILURES\n' ) )

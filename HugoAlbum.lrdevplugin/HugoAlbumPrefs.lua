@@ -64,6 +64,45 @@ local RANGES = {
 	jpegQuality = { min = 1, max = 100 },
 }
 
+--[[
+A relative folder preference, normalised.
+
+albumsFolder is a free-text field that decides where albums are written and what
+`git add` is handed. Left empty it wrote to the repository root; with a leading
+slash `git add` failed with "outside repository"; and `content/../..` escaped the
+working copy altogether. Anything it cannot make sense of falls back to the
+default rather than guessing.
+
+Returns the cleaned value, and false when the raw input had to be rejected.
+]]
+function Prefs.folder( key )
+	local raw = tostring( Prefs.get( key ) or '' )
+	local cleaned = raw:gsub( '\\', '/' ):gsub( '%s+', '' )
+
+	-- An absolute path or a drive letter is not a path inside the repository.
+	local rejected = cleaned:match( '^/' ) ~= nil or cleaned:match( '^%a:' ) ~= nil
+
+	local segments = {}
+	for segment in cleaned:gmatch( '[^/]+' ) do
+		if segment == '..' then
+			rejected = true      -- would climb out of the working copy
+		elseif segment ~= '.' then
+			segments[ #segments + 1 ] = segment
+		end
+	end
+
+	if rejected then
+		return Prefs.DEFAULTS[ key ], false          -- unusable input, say so
+	end
+	if #segments == 0 then
+		-- Compared after cleaning, so a field of spaces counts as unset rather
+		-- than as a mistake worth a message. A deliberate "." does not: the
+		-- repository root is exactly what this is meant to keep albums out of.
+		return Prefs.DEFAULTS[ key ], cleaned == ''
+	end
+	return table.concat( segments, '/' ), true
+end
+
 -- Numbers arrive from edit fields as strings.
 function Prefs.number( key )
 	local value = tonumber( Prefs.get( key ) ) or Prefs.DEFAULTS[ key ]

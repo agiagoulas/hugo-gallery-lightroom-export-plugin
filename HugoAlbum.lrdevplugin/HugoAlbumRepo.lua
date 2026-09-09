@@ -92,7 +92,7 @@ end
 -- and has to become real path segments.
 function Repo.albumsDir( repoPath )
 	local dir = repoPath
-	for segment in tostring( Prefs.get( 'albumsFolder' ) ):gmatch( '[^/]+' ) do
+	for segment in Prefs.folder( 'albumsFolder' ):gmatch( '[^/]+' ) do
 		dir = LrPathUtils.child( dir, segment )
 	end
 	return dir
@@ -104,7 +104,7 @@ end
 
 -- Forward slashes, for git and for messages.
 function Repo.albumRelPath( slug )
-	return tostring( Prefs.get( 'albumsFolder' ) ):gsub( '/+$', '' ) .. '/' .. slug
+	return Prefs.folder( 'albumsFolder' ) .. '/' .. slug
 end
 
 --[[
@@ -210,6 +210,20 @@ function Repo.branchExists( repoPath, branch )
 	return ok
 end
 
+--[[
+Stages the album and commits only it.
+
+The pathspec on the commit is what makes the dialog's promise true: without it,
+anything the user had already staged before opening Lightroom rides along under
+an "Add Venice" message. The `git add` is still needed - a pathspec commit will
+not pick up an untracked directory on its own.
+]]
+function Repo.commitAlbum( repoPath, relPath, message )
+	local ok, output = Repo.git( repoPath, { 'add', '--', relPath } )
+	if not ok then return false, output end
+	return Repo.git( repoPath, { 'commit', '-m', message, '--', relPath } )
+end
+
 function Repo.isDirty( repoPath )
 	local ok, out = Repo.git( repoPath, { 'status', '--porcelain' } )
 	return ok and out:gsub( '%s+', '' ) ~= ''
@@ -266,8 +280,12 @@ function Repo.validatePaths( settings )
 	if not Repo.looksLikeHugoSite( repoPath ) then
 		return 'No Hugo configuration found in ' .. repoPath .. '.', false
 	end
+	local folder, folderOk = Prefs.folder( 'albumsFolder' )
+	if not folderOk then
+		return 'The albums folder must be a relative path inside the site, like "content".', false
+	end
 	if not LrFileUtils.exists( Repo.albumsDir( repoPath ) ) then
-		return 'No ' .. Prefs.get( 'albumsFolder' ) .. '/ folder in ' .. repoPath .. '.', false
+		return 'No ' .. folder .. '/ folder in ' .. repoPath .. '.', false
 	end
 
 	local exists = Slug.isValid( settings.slug )

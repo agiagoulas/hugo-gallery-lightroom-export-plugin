@@ -350,11 +350,9 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 		end
 
 		if ok then
-			ok, output = Repo.git( repoPath, { 'add', '--', Repo.albumRelPath( slug ) } )
-		end
-		if ok then
 			local verb = existing and 'Update ' or 'Add '
-			ok, output = Repo.git( repoPath, { 'commit', '-m', verb .. ( album.title or slug ) } )
+			ok, output = Repo.commitAlbum( repoPath, Repo.albumRelPath( slug ),
+				verb .. album.title )
 		end
 
 		if ok then
