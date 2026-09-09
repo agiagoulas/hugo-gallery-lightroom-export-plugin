@@ -398,6 +398,10 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 					end,
 				},
 			},
+			-- The echo is a reading of what was typed, not another field, so it
+			-- wants a little air on both sides: enough to sit apart from the
+			-- input above, and not to butt against whatever follows.
+			f:spacer { height = 4 },
 			f:row {
 				f:static_text { title = '', width = share 'label_width' },
 				f:static_text {
@@ -406,6 +410,7 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 					text_color = LrColor( 0.4, 0.4, 0.4 ),
 				},
 			},
+			f:spacer { height = 8 },
 		}
 	end
 
