@@ -1,4 +1,4 @@
-# Hugo Gallery Export Plugin
+# Hugo Gallery Export Plugin for Lightroom Classic
 
 A Lightroom Classic export plugin for [Hugo](https://gohugo.io) sites built on
 [hugo-theme-gallery](https://github.com/nicokaiser/hugo-theme-gallery). Select photos, fill in a
