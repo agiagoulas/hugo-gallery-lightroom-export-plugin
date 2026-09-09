@@ -205,9 +205,13 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	local slug     = settings.slug
 	local albumDir = Repo.albumDir( repoPath, slug )
 
+	-- uuid comes from the batch like everything else, with a per-photo read only
+	-- as a fallback: without it, any case where the two rendition iterators hand
+	-- back different photo identities turns a saving into a dead export.
 	local indexByUuid = {}
 	for i, photo in ipairs( photos ) do
-		indexByUuid[ photo:getRawMetadata( 'uuid' ) ] = i
+		local m = meta[ photo ]
+		indexByUuid[ ( m and m.uuid ) or photo:getRawMetadata( 'uuid' ) ] = i
 	end
 
 	-- Adding to an album that is already there: continue its numbering rather
@@ -241,7 +245,6 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 		branchName, useExistingBranch = planGitStep( repoPath, settings.branchName )
 	end
 
-	-- Only remove the directory on failure if this export is what created it.
 	-- Only ever removes a directory this export created. An album that existed
 	-- beforehand is never deleted, however badly the export goes.
 	local createdDir = false
@@ -258,42 +261,86 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 
 	exportContext:configureProgress { title = 'Building album ' .. slug }
 
-	local written = 0
+	--[[
+	A rendition that goes wrong is reported to Lightroom and the loop carries on.
+
+	Raising here instead - as this used to - unwinds straight out of
+	exportContext:renditions() leaving the remaining renditions unconsumed, which
+	is the hang this file warns about at the top. Failures are collected and
+	reported once, after the iterator has drained.
+	]]
+	local written, failures, takenBy = 0, {}, {}
+
 	for _, rendition in exportContext:renditions { stopIfCanceled = true } do
+		local function fail( message )
+			log:error( message )
+			failures[ #failures + 1 ] = message
+			rendition:renditionIsDone( false, message )
+		end
+
 		local ok, pathOrMessage = rendition:waitForRender()
 		if not ok then
-			error( 'Render failed: ' .. tostring( pathOrMessage ) )
-		end
+			fail( 'Render failed: ' .. tostring( pathOrMessage ) )
+		else
+			-- Index by uuid, not by the loop counter: renditions do not
+			-- necessarily complete in the order the photos were listed.
+			local m = meta[ rendition.photo ]
+			local uuid = ( m and m.uuid ) or rendition.photo:getRawMetadata( 'uuid' )
+			local i = indexByUuid[ uuid ]
 
-		-- Index by uuid, not by the loop counter: renditions do not necessarily
-		-- complete in the order the photos were listed.
-		local i = indexByUuid[ rendition.photo:getRawMetadata( 'uuid' ) ]
-		if not i then
-			error( 'Rendered a photo that was not in the export list.' )
-		end
+			if not i then
+				fail( 'Rendered a photo that was not in the export list.' )
+			elseif takenBy[ i ] then
+				-- Two renditions claiming one destination would overwrite each
+				-- other, and `written` counts renditions, so the album would come
+				-- out one photo short with nothing to show for it.
+				fail( 'Two photos claim the same destination number ' .. i .. '.' )
+			else
+				takenBy[ i ] = true
+				local dest = LrPathUtils.child( albumDir, Slug.fileName( slug, i, numbering ) )
 
-		local dest = LrPathUtils.child( albumDir, Slug.fileName( slug, i, numbering ) )
-		LrFileUtils.move( pathOrMessage, dest )
-		if not LrFileUtils.exists( dest ) then
-			-- Safety net for a cross-volume temp directory, where move is a copy
-			-- rather than a rename and can fail. Testing the destination rather
-			-- than move's return value keeps this correct whichever convention
-			-- the SDK follows, and never copies from an already-consumed source.
-			LrFileUtils.copy( pathOrMessage, dest )
-			LrFileUtils.delete( pathOrMessage )
+				LrFileUtils.move( pathOrMessage, dest )
+				if not LrFileUtils.exists( dest ) then
+					-- Safety net for a cross-volume temp directory, where move is a
+					-- copy rather than a rename and can fail. Testing the
+					-- destination rather than move's return value keeps this correct
+					-- whichever convention the SDK follows, and never copies from an
+					-- already-consumed source. The delete comes after the check, so
+					-- a failed copy does not destroy the only rendered file.
+					LrFileUtils.copy( pathOrMessage, dest )
+					if LrFileUtils.exists( dest ) then LrFileUtils.delete( pathOrMessage ) end
+				end
+
+				if LrFileUtils.exists( dest ) then
+					written = written + 1
+				else
+					fail( 'Could not place ' .. dest )
+				end
+			end
 		end
-		if not LrFileUtils.exists( dest ) then
-			error( 'Could not place ' .. dest )
-		end
-		written = written + 1
 	end
 
 	if written < total then
-		-- stopIfCanceled breaks the loop, so this is the ordinary cancel path as
-		-- well as the failure one. Either way the cleanup handler removes the
-		-- half-written directory.
-		error( string.format( 'Stopped after %d of %d photos - %s was removed.',
-			written, total, Repo.albumRelPath( slug ) ) )
+		-- Two different endings. stopIfCanceled breaks the loop with nothing
+		-- wrong, and telling the user their own Cancel was an internal error is
+		-- its own small insult; a genuine failure lists what went wrong.
+		local removed = createdDir
+			and ( ' ' .. Repo.albumRelPath( slug ) .. ' was removed.' )
+			or ( ' The photos already added were left in place.' )
+
+		local message
+		if #failures > 0 then
+			message = string.format( 'Wrote %d of %d photos.%s\n\n%s',
+				written, total, removed, table.concat( failures, '\n' ) )
+		else
+			message = string.format( 'Cancelled after %d of %d photos.%s',
+				written, total, removed )
+		end
+
+		log:warn( message )
+		LrDialogs.message( 'Album ' .. slug .. ' was not completed', message,
+			#failures > 0 and 'critical' or 'info' )
+		return
 	end
 
 	--[[
@@ -342,16 +389,17 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	end
 
 	if branchName then
-		local ok, output = true, ''
+		local ok, output, status, command
 		if not useExistingBranch then
-			ok, output = Repo.git( repoPath, { 'checkout', '-b', branchName } )
+			ok, output, status, command = Repo.git( repoPath, { 'checkout', '-b', branchName } )
 		else
-			ok, output = Repo.git( repoPath, { 'checkout', branchName } )
+			ok, output, status, command = Repo.git( repoPath, { 'checkout', branchName } )
 		end
 
+		local checkedOut = ok
 		if ok then
 			local verb = existing and 'Update ' or 'Add '
-			ok, output = Repo.commitAlbum( repoPath, Repo.albumRelPath( slug ),
+			ok, output, status, command = Repo.commitAlbum( repoPath, Repo.albumRelPath( slug ),
 				verb .. album.title )
 		end
 
@@ -365,10 +413,23 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 			-- photos; its message already says what to do. The branch and the
 			-- staged files are deliberately left in place to be finished in a
 			-- terminal.
+			-- git's own message is the useful part - a refusing pre-commit hook
+			-- says exactly what to do. When there is none, the command line and
+			-- the exit status beat "git failed with no output".
 			LrDialogs.message( 'Commit refused',
-				output ~= '' and output or 'git failed with no output.', 'critical' )
-			summary[ #summary + 1 ] = 'The git step failed - the files are on disk and staged '
-				.. 'on ' .. branchName .. '.'
+				output ~= '' and output
+					or string.format( 'git exited with status %s and said nothing.\n\n%s',
+						tostring( status ), tostring( command ) ),
+				'critical' )
+			-- Which of the three steps failed decides what is true afterwards.
+			-- Saying "staged on <branch>" after a failed checkout is the opposite
+			-- of what happened, and the checkout is very reachable: it refuses
+			-- when local changes conflict, which the dirty-repo dialog said was
+			-- fine to continue with.
+			summary[ #summary + 1 ] = checkedOut
+				and ( 'The git step failed - the files are on disk, on branch ' .. branchName .. '.' )
+				or ( 'The git step failed before switching branch - the files are on disk, '
+					.. 'on whatever branch you were already on.' )
 		end
 	else
 		summary[ #summary + 1 ] = ''
@@ -376,7 +437,8 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 			.. Repo.albumRelPath( slug ) .. '.'
 	end
 
-	LrDialogs.message( 'Album ' .. slug .. ' created', table.concat( summary, '\n' ), 'info' )
+	LrDialogs.message( 'Album ' .. slug .. ( existing and ' updated' or ' created' ),
+		table.concat( summary, '\n' ), 'info' )
 end
 
 return provider

@@ -219,8 +219,8 @@ an "Add Venice" message. The `git add` is still needed - a pathspec commit will
 not pick up an untracked directory on its own.
 ]]
 function Repo.commitAlbum( repoPath, relPath, message )
-	local ok, output = Repo.git( repoPath, { 'add', '--', relPath } )
-	if not ok then return false, output end
+	local ok, output, status, command = Repo.git( repoPath, { 'add', '--', relPath } )
+	if not ok then return false, output, status, command end
 	return Repo.git( repoPath, { 'commit', '-m', message, '--', relPath } )
 end
 

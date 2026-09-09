@@ -210,7 +210,11 @@ local Metadata = require 'HugoAlbumMetadata'
 
 local meta = Metadata.read( shot )
 eq( batchCalls, 1, 'metadata: one batch call for the whole selection' )
-eq( #batchKeys >= 7, true, 'metadata: asks for every field the album needs' )
+local asked = {}
+for _, k in ipairs( batchKeys ) do asked[ k ] = true end
+eq( asked.uuid, true, 'metadata: uuid comes from the batch too, not per photo' )
+eq( asked.rating and asked.gps and asked.colorNameForLabel and asked.pickStatus, true,
+	'metadata: asks for every field the album needs' )
 eq( meta[ earlier ].fileName, 'a.jpg', 'metadata: batch result is keyed by photo' )
 
 local byCapture = Metadata.sortPhotos( shot, 'capture', meta )

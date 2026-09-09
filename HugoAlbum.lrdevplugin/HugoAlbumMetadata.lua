@@ -34,7 +34,7 @@ place where a single unsupported key would otherwise take the whole dialog down.
 ]]
 local KEYS = {
 	'dateTimeOriginalISO8601', 'dateTimeOriginal', 'fileName',
-	'rating', 'pickStatus', 'colorNameForLabel', 'gps',
+	'rating', 'pickStatus', 'colorNameForLabel', 'gps', 'uuid',
 }
 
 function Metadata.read( photos )
