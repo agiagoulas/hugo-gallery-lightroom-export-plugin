@@ -190,9 +190,9 @@ local function photo( name, fields )
 end
 
 local later = photo( 'b.jpg', { dateTimeOriginalISO8601 = '2026-05-04T10:00:00',
-	dateTimeOriginal = 200, fileName = 'b.jpg', rating = 5 } )
+	dateTimeOriginal = 200, path = '/photos/b.jpg', rating = 5 } )
 local earlier = photo( 'a.jpg', { dateTimeOriginalISO8601 = '2026-05-02T10:00:00',
-	dateTimeOriginal = 100, fileName = 'a.jpg', rating = 2,
+	dateTimeOriginal = 100, path = '/photos/a.jpg', rating = 2,
 	gps = { latitude = 45.4408, longitude = 12.3155 } } )
 local shot = { later, earlier }   -- deliberately not in capture order
 
@@ -215,7 +215,12 @@ for _, k in ipairs( batchKeys ) do asked[ k ] = true end
 eq( asked.uuid, true, 'metadata: uuid comes from the batch too, not per photo' )
 eq( asked.rating and asked.gps and asked.colorNameForLabel and asked.pickStatus, true,
 	'metadata: asks for every field the album needs' )
-eq( meta[ earlier ].fileName, 'a.jpg', 'metadata: batch result is keyed by photo' )
+eq( meta[ earlier ].path, '/photos/a.jpg', 'metadata: batch result is keyed by photo' )
+local rawOnly = {}
+for _, k in ipairs( batchKeys ) do rawOnly[ k ] = true end
+eq( rawOnly.fileName, nil,
+	'metadata: no formatted-only key is asked of getRawMetadata - fileName raises "Unknown key"' )
+eq( rawOnly.path, true, 'metadata: the raw equivalent is path' )
 
 local byCapture = Metadata.sortPhotos( shot, 'capture', meta )
 eq( byCapture[ 1 ].name, 'a.jpg', 'sort: capture order, without touching the catalog again' )
@@ -236,9 +241,22 @@ end }
 package.loaded[ 'HugoAlbumMetadata' ] = nil
 Metadata = require 'HugoAlbumMetadata'
 local fallback = Metadata.read( shot )
-eq( fallback[ earlier ].fileName, 'a.jpg', 'metadata: falls back to per-photo reads' )
+eq( fallback[ earlier ].path, '/photos/a.jpg', 'metadata: falls back to per-photo reads' )
 eq( Metadata.resolve( shot, { coverRule = 'first' }, fallback ).date, '2026-05-02',
 	'metadata: the fallback carries the same values' )
+
+-- The batch call fails wholesale on one bad key, and the fallback then reads the
+-- same keys one by one. If it does not tolerate the bad one it dies of the very
+-- cause it exists to survive - which is exactly how "Unknown key: fileName" took
+-- the whole Export dialog down.
+local hostile = photo( 'h.jpg', { path = '/photos/h.jpg', rating = 4 } )
+hostile.getRawMetadata = function( self, key )
+	if key == 'rating' then error( 'Unknown key: "rating"' ) end
+	return self.fields[ key ]
+end
+local survived = Metadata.read { hostile }
+eq( survived[ hostile ].path, '/photos/h.jpg', 'metadata: a rejected key costs only that field' )
+eq( survived[ hostile ].rating, nil, 'metadata: ... and the rejected one is simply absent' )
 
 
 --------------------------------------------------------------------------------

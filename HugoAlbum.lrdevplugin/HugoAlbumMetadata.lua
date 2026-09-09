@@ -7,6 +7,7 @@ Read-only throughout - nothing here needs catalog write access.
 
 local LrApplication = import 'LrApplication'
 local LrDate        = import 'LrDate'
+local LrPathUtils   = import 'LrPathUtils'
 local LrTasks       = import 'LrTasks'
 
 local Coords      = require 'HugoAlbumCoords'
@@ -32,8 +33,10 @@ in the dialog needs no catalog access at all.
 Falls back to per-photo reads if the batch call is unavailable: this is the one
 place where a single unsupported key would otherwise take the whole dialog down.
 ]]
+-- Raw keys only. `fileName` is formatted-only and raises "Unknown key" here;
+-- the raw equivalent is `path`, from which the leaf name is taken below.
 local KEYS = {
-	'dateTimeOriginalISO8601', 'dateTimeOriginal', 'fileName',
+	'dateTimeOriginalISO8601', 'dateTimeOriginal', 'path',
 	'rating', 'pickStatus', 'colorNameForLabel', 'gps', 'uuid',
 }
 
@@ -44,10 +47,25 @@ function Metadata.read( photos )
 
 	log:warn( 'batchGetRawMetadata unavailable, falling back to per-photo reads: '
 		.. tostring( batch ) )
+	-- Per key, not per photo, and tolerant: getRawMetadata raises on a key it does
+	-- not know, and a fallback that dies of the same cause as the batch call is
+	-- no fallback at all. A key that fails leaves its field nil and says so once.
+	local usable = {}
+	for _, key in ipairs( KEYS ) do
+		local readable = LrTasks.pcall( function()
+			return photos[ 1 ] and photos[ 1 ]:getRawMetadata( key )
+		end )
+		if readable then
+			usable[ #usable + 1 ] = key
+		else
+			log:error( 'unusable metadata key, skipping: ' .. key )
+		end
+	end
+
 	local meta = {}
 	for _, photo in ipairs( photos ) do
 		local one = {}
-		for _, key in ipairs( KEYS ) do one[ key ] = photo:getRawMetadata( key ) end
+		for _, key in ipairs( usable ) do one[ key ] = photo:getRawMetadata( key ) end
 		meta[ photo ] = one
 	end
 	return meta
@@ -81,6 +99,10 @@ local function sortPhotos( input, sequenceBy, meta )
 		return meta and meta[ photo ] or {}
 	end
 
+	local function leaf( m )
+		return m.path and LrPathUtils.leafName( m.path ) or ''
+	end
+
 	if sequenceBy == 'capture' then
 		-- Stable via the filename tie-break: two frames from the same second
 		-- still get a deterministic order.
@@ -89,11 +111,11 @@ local function sortPhotos( input, sequenceBy, meta )
 			local ta = ma.dateTimeOriginal or math.huge
 			local tb = mb.dateTimeOriginal or math.huge
 			if ta ~= tb then return ta < tb end
-			return ( ma.fileName or '' ) < ( mb.fileName or '' )
+			return leaf( ma ) < leaf( mb )
 		end )
 	elseif sequenceBy == 'filename' then
 		table.sort( photos, function( a, b )
-			return ( of( a ).fileName or '' ) < ( of( b ).fileName or '' )
+			return leaf( of( a ) ) < leaf( of( b ) )
 		end )
 	end
 	return photos
