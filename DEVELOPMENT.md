@@ -70,6 +70,14 @@ opens.
   context fails with *"must not be called after exportSession has started rendering"*, which then
   masks whatever the real reason for the abort was.
 
+- **`LrDialogs.message` at `'info'` does not show while an export is being torn down.** The same
+  call at `'warning'` or `'critical'` does. This cost three attempts to find: the summary for a
+  cancelled export was silent, and everything around the call — including the Prefs access that
+  builds its text — was byte-identical to a version that had been showing it. The only difference
+  was that correctly classifying a cancel had moved the style from `'critical'` to `'info'`. The
+  cancel summary is logged immediately before the dialog for exactly this reason, so the log tells
+  you whether the handler ran or the dialog was swallowed.
+
 - **Never raise out of the rendition loop.** A failure inside it is reported with
   `rendition:renditionIsDone(false, msg)`, collected, and the loop continues so the iterator
   drains; the failures are reported once at the end. Raising instead leaves renditions unconsumed
