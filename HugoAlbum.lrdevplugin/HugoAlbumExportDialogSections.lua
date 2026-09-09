@@ -61,6 +61,12 @@ Sections.exportPresetFields = {
 -- Writes an auto-filled value only into a field the user has not edited: blank,
 -- or still holding whatever the previous auto-fill put there.
 local function prefill( propertyTable, key, value )
+	-- nil means "no suggestion", which is not the same as "make it empty". Passing
+	-- nil used to blank the field, so unticking the append box - or a keystroke
+	-- that changed the slug - wiped the date and dimmed Export with
+	-- "Date must be YYYY-MM-DD" and no way back.
+	if value == nil then return end
+
 	local current = propertyTable[ key ]
 	if current == '' or current == state.autoFilled[ key ] then
 		propertyTable[ key ] = value
@@ -116,10 +122,28 @@ local function previewText( propertyTable )
 			lines[ #lines + 1 ] = 'Warning: past ' .. string.rep( '9', numbering.width - 1 )
 				.. ' the filenames need another digit, which breaks sort_by: Name.'
 		end
+
+		-- Naming them here is the difference between "your description was
+		-- ignored" and "the plugin ate my description".
+		local unmanaged = existing.values and existing.values.unmanaged
+		if propertyTable.updateExisting and unmanaged then
+			local names = {}
+			for key in pairs( unmanaged ) do names[ #names + 1 ] = key end
+			table.sort( names )
+			if #names > 0 then
+				lines[ #lines + 1 ] = 'Multi-line in index.md, so left exactly as they are: '
+					.. table.concat( names, ', ' ) .. '.'
+			end
+		end
 	end
 
 	local r = state.resolved
-	if r then
+	if propertyTable.updateExisting and existing then
+		-- The cover rule only ever runs over the photos being added, so applying
+		-- it to an album that already has one would promote a newcomer. An
+		-- existing album keeps whatever cover it has; change it in the file.
+		lines[ #lines + 1 ] = 'Cover: unchanged - an existing album keeps its own.'
+	elseif r then
 		if r.coverIndex then
 			local extra = r.coverCount > 1
 				and string.format( ' (%d matched, first wins)', r.coverCount ) or ''
@@ -215,11 +239,23 @@ is retitled; the preview names the current one so the change stays visible.
 ]]
 local function applyExistingValues( propertyTable )
 	local values = propertyTable.updateExisting and state.existing and state.existing.values
-	prefill( propertyTable, 'albumDate', values and values.date or '' )
-	prefill( propertyTable, 'description', values and values.description or '' )
-	prefill( propertyTable, 'categories', values and values.categories or '' )
-	prefill( propertyTable, 'location',
-		( values and values.lat and values.lng ) and Coords.format( values.lat, values.lng ) or '' )
+	local resolved = state.resolved
+
+	if values then
+		prefill( propertyTable, 'albumDate', values.date )
+		prefill( propertyTable, 'description', values.description )
+		prefill( propertyTable, 'categories', values.categories )
+		if values.lat and values.lng then
+			prefill( propertyTable, 'location', Coords.format( values.lat, values.lng ) )
+		end
+	else
+		-- Back to what the photos themselves say, not to empty. Only fields the
+		-- user has not touched move, because that is what prefill guarantees.
+		prefill( propertyTable, 'albumDate', resolved and resolved.date )
+		if resolved and resolved.lat then
+			prefill( propertyTable, 'location', Coords.format( resolved.lat, resolved.lng ) )
+		end
+	end
 end
 
 local function refreshPaths( propertyTable )
@@ -276,11 +312,13 @@ function Sections.startDialog( propertyTable )
 	-- `state` outlives a single dialog, so reset the cached verdict too: a stale
 	-- "repo is fine" from last time would briefly enable the Export button.
 	state.photos, state.ordered, state.resolved, state.meta = {}, {}, nil, {}
+	state.existing = nil
 	state.repoProblem, state.albumExists = 'Checking the repo...', false
 
 	update( propertyTable )   -- valid state immediately; the preview fills in below
 
-	for _, key in ipairs { 'albumTitle', 'branchName', 'albumDate', 'location' } do
+	for _, key in ipairs { 'albumTitle', 'branchName', 'albumDate', 'location',
+		'slugManual', 'branchManual' } do
 		propertyTable:addObserver( key, function() update( propertyTable ) end )
 	end
 	-- The slug decides where the album would land, so it needs the file-system
@@ -522,7 +560,11 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 				f:static_text {
 					title = bind 'previewText',
 					fill_horizontal = 1,
-					height_in_lines = 3,
+					-- previewText emits at most seven lines and the destination
+					-- path wraps on its own. Too small a value clips silently, and
+					-- what got clipped was the Cover line and the warning that the
+					-- album's sort order is about to break.
+					height_in_lines = 8,
 				},
 			},
 		},

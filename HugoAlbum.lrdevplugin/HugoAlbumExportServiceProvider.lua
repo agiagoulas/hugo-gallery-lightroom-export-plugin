@@ -128,8 +128,20 @@ local function writeFile( path, contents )
 	if not handle then
 		error( 'Could not write ' .. path .. ': ' .. tostring( err ) )
 	end
-	handle:write( contents )
-	handle:close()
+
+	-- Both returns are checked. In Lua 5.1 file:write does not raise on failure,
+	-- it returns nil plus a message, and a buffered write error commonly only
+	-- surfaces at close - so ignoring these is how a full disk produces a
+	-- truncated index.md that the export then reports as a success and commits.
+	-- Note write returns the HANDLE on success, not true: test `not ok`.
+	local ok, writeErr = handle:write( contents )
+	local closed, closeErr = handle:close()
+	if not ok then
+		error( 'Could not write ' .. path .. ': ' .. tostring( writeErr ) )
+	end
+	if not closed then
+		error( 'Could not finish writing ' .. path .. ': ' .. tostring( closeErr ) )
+	end
 end
 
 -- Picks album/<slug>-2, -3, ... for the case where the obvious name is taken.
