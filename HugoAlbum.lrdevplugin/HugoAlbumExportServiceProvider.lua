@@ -275,7 +275,12 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 			and ( ' ' .. Repo.albumRelPath( slug ) .. ' was removed.' )
 			or ( ' The photos already added were left in place.' )
 
-		local cancelled = #failures == 0 and ( not progress or progress:isCanceled() )
+		-- The scope decides, not the failure list. Cancelling makes the rendition
+		-- that was in flight fail with no message at all, so judging by "did
+		-- anything fail" reported a cancel as "Wrote 2 of 3 photos / Render
+		-- failed: nil". A missing scope falls back to calling it a cancellation,
+		-- which is the harmless direction to be wrong in.
+		local cancelled = ( not progress ) or progress:isCanceled()
 		local message
 		if cancelled then
 			message = string.format( 'Cancelled after %d of %d photos.%s', written, total, removed )
@@ -313,7 +318,13 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 
 		local ok, pathOrMessage = rendition:waitForRender()
 		if not ok then
-			fail( 'Render failed: ' .. tostring( pathOrMessage ) )
+			-- A render that failed because the export is being cancelled is not a
+			-- fault of its own, and listing it would bury the actual reason.
+			if progress and progress:isCanceled() then
+				rendition:renditionIsDone( false, 'Export cancelled' )
+			else
+				fail( 'Render failed: ' .. tostring( pathOrMessage or 'no reason given' ) )
+			end
 		else
 			-- Index by uuid, not by the loop counter: renditions do not
 			-- necessarily complete in the order the photos were listed.
