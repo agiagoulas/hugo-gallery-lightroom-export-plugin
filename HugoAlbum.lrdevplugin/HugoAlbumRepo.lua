@@ -242,11 +242,25 @@ called from a task, with the dialog caching its result.
 Both return a reason to show under a dimmed Export button, or nil.
 ]]
 function Repo.validateFields( settings )
-	if not settings.albumTitle or settings.albumTitle == '' then
-		return 'Enter an album title.'
+	-- The slug comes first: it is what the dialog asks for, what names the folder,
+	-- and what an existing album is found by. An empty one is not a malformed one
+	-- and does not deserve the character rule as its explanation.
+	if not settings.slug or settings.slug == '' then
+		return 'Enter a slug - it names the album folder.'
 	end
 	if not Slug.isValid( settings.slug ) then
+		-- Offer the slug they probably meant. Typing a title into this field is
+		-- the obvious mistake now that it asks for the slug, and "Brüssels" is
+		-- more usefully answered with "bruessels" than with a rule.
+		local suggestion = Slug.slugify( settings.slug )
+		if suggestion ~= '' and suggestion ~= settings.slug then
+			return 'Slug must be lowercase letters, digits and hyphens - try "'
+				.. suggestion .. '".'
+		end
 		return 'Slug must be lowercase letters, digits and hyphens.'
+	end
+	if not settings.albumTitle or settings.albumTitle == '' then
+		return 'Enter an album title.'
 	end
 
 	-- These reach Hugo unquoted, so a typo here is a failed build rather than a

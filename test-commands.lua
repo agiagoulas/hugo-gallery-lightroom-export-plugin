@@ -420,6 +420,14 @@ local function fields( over )
 end
 
 eq( fields(), nil, 'fields: a complete set passes' )
+eq( fields { slug = '' }, 'Enter a slug - it names the album folder.',
+	'fields: the slug is the required input, and empty is not malformed' )
+eq( fields { slug = 'Brüssels' },
+	'Slug must be lowercase letters, digits and hyphens - try "bruessels".',
+	'fields: a typed title is answered with the slug it should have been' )
+eq( fields { slug = 'UPPER' },
+	'Slug must be lowercase letters, digits and hyphens - try "upper".',
+	'fields: ... including the simple case' )
 eq( fields { albumDate = '2026-5-2' }, 'Date must be YYYY-MM-DD.', 'fields: a loose date is refused' )
 eq( fields { albumDate = '' }, 'Date must be YYYY-MM-DD.', 'fields: an empty date is refused' )
 eq( fields { location = '45.4408, 12.3155' }, nil, 'fields: readable coordinates pass' )

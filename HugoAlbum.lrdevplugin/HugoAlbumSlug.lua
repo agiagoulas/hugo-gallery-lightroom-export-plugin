@@ -81,6 +81,24 @@ function Slug.numbering( newCount, existing )
 	}
 end
 
+--[[
+The other direction: a readable title from a slug.
+
+The slug is what the Export dialog asks for, because it is what identifies the
+album, so the title is offered as a starting point rather than demanded. Every
+word is capitalised, including short ones - "best-of" becomes "Best Of" rather
+than "Best of". Predictable beats clever here: the field is editable, and a rule
+with exceptions is one you cannot guess from the outside.
+]]
+function Slug.titleFromSlug( slug )
+	if type( slug ) ~= 'string' then return '' end
+	local words = {}
+	for word in slug:gmatch( '[^%-]+' ) do
+		words[ #words + 1 ] = word:sub( 1, 1 ):upper() .. word:sub( 2 )
+	end
+	return table.concat( words, ' ' )
+end
+
 function Slug.fileName( slug, index, numbering )
 	local number = numbering.offset + index
 	return slug .. '-' .. string.format( '%0' .. numbering.width .. 'd', number ) .. '.jpg'

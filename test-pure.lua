@@ -64,6 +64,19 @@ eq( select( 2, names( 5, { highest = 98, width = 2 } ) ).widthGrew, true,
 eq( select( 2, names( 5, { highest = 40, width = 2 } ) ).widthGrew, false,
 	'append: no false alarm when the width is unchanged' )
 
+-- Title from slug ---------------------------------------------------------------
+--
+-- The dialog asks for the slug and offers a title, not the other way round.
+
+eq( Slug.titleFromSlug( 'test-hello' ), 'Test Hello', 'title: hyphens become spaces' )
+eq( Slug.titleFromSlug( 'venice' ), 'Venice', 'title: a single word' )
+eq( Slug.titleFromSlug( 'dolomites-2026' ), 'Dolomites 2026', 'title: digits are left alone' )
+eq( Slug.titleFromSlug( 'best-of' ), 'Best Of', 'title: every word, short ones included' )
+eq( Slug.titleFromSlug( 'bruessels' ), 'Bruessels', 'title: no attempt to undo transliteration' )
+eq( Slug.titleFromSlug( '' ), '', 'title: empty slug' )
+eq( Slug.titleFromSlug( nil ), '', 'title: nil' )
+eq( Slug.titleFromSlug( 'a--b' ), 'A B', 'title: a doubled hyphen does not make an empty word' )
+
 -- Front matter ----------------------------------------------------------------
 
 eq( FrontMatter.render {

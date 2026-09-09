@@ -41,7 +41,6 @@ local state = {
 Sections.exportPresetFields = {
 	{ key = 'albumTitle',   default = '' },
 	{ key = 'slug',         default = '' },
-	{ key = 'slugManual',   default = false },
 	{ key = 'description',  default = '' },
 	{ key = 'categories',   default = '' },
 	{ key = 'albumDate',    default = '' },
@@ -177,9 +176,12 @@ local function update( propertyTable )
 	if updating then return end
 	updating = true
 
-	if not propertyTable.slugManual then
-		propertyTable.slug = Slug.slugify( propertyTable.albumTitle )
-	end
+	-- The slug is what the dialog asks for: it identifies the album, it is what an
+	-- existing one is found by, and it cannot then wander off under the album
+	-- while the title is being edited. The title is offered from it through
+	-- prefill, so it follows along until you type your own and then stops.
+	prefill( propertyTable, 'albumTitle', Slug.titleFromSlug( propertyTable.slug ) )
+
 	if not propertyTable.branchManual then
 		propertyTable.branchName = propertyTable.slug ~= '' and ( 'album/' .. propertyTable.slug ) or ''
 	end
@@ -187,8 +189,8 @@ local function update( propertyTable )
 	-- The documented way to block an export: Lightroom dims the Export button
 	-- and shows this string under it. nil re-enables.
 	--
-	-- Display order: a bad repo path outranks a missing title, but an existing
-	-- an existing album folder only means anything once the slug is valid.
+	-- Display order: a bad repo path outranks a missing slug, and an existing
+	-- album folder only means anything once the slug is valid.
 	-- Appending to an album that is already there is never something to arrive at
 	-- by accident, so it stays blocked until the box is ticked for that album.
 	propertyTable.albumExists = state.albumExists == true
@@ -196,7 +198,7 @@ local function update( propertyTable )
 		or Repo.validateFields( propertyTable )
 		or ( state.albumExists and not propertyTable.updateExisting
 			and ( Repo.albumRelPath( propertyTable.slug )
-				.. ' already exists. Tick "Add to the existing album", or change the title.' ) )
+				.. ' already exists. Tick "Add to the existing album", or change the slug.' ) )
 		or nil
 	local lat, lng = Coords.parse( propertyTable.location )
 	propertyTable.hasLocation = lat ~= nil
@@ -242,10 +244,7 @@ local function applyExistingValues( propertyTable )
 	local resolved = state.resolved
 
 	if values then
-		-- Safe only because ticking the box pins the slug. The album is found BY
-		-- the slug and the slug is derived from the title, so filling the title in
-		-- while it still followed would move the slug onto a different album - the
-		-- reason this was left out until now.
+		-- An existing album's own title beats one generated from the slug.
 		prefill( propertyTable, 'albumTitle', values.title )
 		prefill( propertyTable, 'albumDate', values.date )
 		prefill( propertyTable, 'description', values.description )
@@ -254,8 +253,9 @@ local function applyExistingValues( propertyTable )
 			prefill( propertyTable, 'location', Coords.format( values.lat, values.lng ) )
 		end
 	else
-		-- Back to what the photos themselves say, not to empty. Only fields the
-		-- user has not touched move, because that is what prefill guarantees.
+		-- Back to what the photos and the slug themselves say, not to empty. Only
+		-- fields the user has not touched move; that is what prefill guarantees.
+		prefill( propertyTable, 'albumTitle', Slug.titleFromSlug( propertyTable.slug ) )
 		prefill( propertyTable, 'albumDate', resolved and resolved.date )
 		if resolved and resolved.lat then
 			prefill( propertyTable, 'location', Coords.format( resolved.lat, resolved.lng ) )
@@ -299,7 +299,6 @@ function Sections.startDialog( propertyTable )
 	-- usually the same album to album.
 	propertyTable.albumTitle = ''
 	propertyTable.slug = ''
-	propertyTable.slugManual = false
 	propertyTable.description = ''
 	propertyTable.branchManual = false
 	propertyTable.previewText = ''
@@ -310,7 +309,6 @@ function Sections.startDialog( propertyTable )
 	propertyTable.albumDate, propertyTable.location = '', ''
 	propertyTable.hasLocation, propertyTable.locationEcho = false, ''
 	propertyTable.updateExisting, propertyTable.albumExists = false, false
-	state.pinnedSlug, state.titleBeforeUpdate = false, nil
 	state.autoFilled = {}
 
 	propertyTable.dateChoices = {}   -- filled once the catalog has been read
@@ -324,41 +322,19 @@ function Sections.startDialog( propertyTable )
 	update( propertyTable )   -- valid state immediately; the preview fills in below
 
 	for _, key in ipairs { 'albumTitle', 'branchName', 'albumDate', 'location',
-		'slugManual', 'branchManual' } do
+		'branchManual' } do
 		propertyTable:addObserver( key, function() update( propertyTable ) end )
 	end
 	-- The slug decides where the album would land, so it needs the file-system
 	-- checks redone. The repo itself is fixed for the session - it is set in the
 	-- Plug-in Manager, not here.
 	propertyTable:addObserver( 'slug', function()
-		-- Consent is per album: a different slug is a different decision. The pin
-		-- is released here rather than reverted, because a slug that moved while
-		-- pinned means the user is steering by slug - taking the field away from
-		-- them mid-edit would be the wrong response to that.
-		state.pinnedSlug = false
+		-- Consent is per album: a different slug is a different decision.
 		propertyTable.updateExisting = false
 		refreshPaths( propertyTable )
 	end )
 
 	propertyTable:addObserver( 'updateExisting', function()
-		if propertyTable.updateExisting then
-			-- Pin before anything fills the title in. This is what makes retitling
-			-- an existing album possible: the slug identifies it, the title is
-			-- just content, and until now the two could not be separated.
-			state.titleBeforeUpdate = propertyTable.albumTitle
-			if not propertyTable.slugManual then
-				state.pinnedSlug = true
-				propertyTable.slugManual = true
-			end
-
-		elseif state.pinnedSlug then
-			-- A deliberate untick, not a slug that moved: put back the title the
-			-- user had typed and let the slug follow it again.
-			prefill( propertyTable, 'albumTitle', state.titleBeforeUpdate )
-			state.pinnedSlug = false
-			propertyTable.slugManual = false
-		end
-
 		applyExistingValues( propertyTable )
 		update( propertyTable )
 	end )
@@ -445,23 +421,34 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 			title = 'Hugo Album',
 			synopsis = bind 'slug',
 
-			row( 'Title:', f:edit_field {
-				value = bind 'albumTitle', immediate = true, fill_horizontal = 1,
-			} ),
-
+			-- Slug first, because it is the input. It names the folder, it is the
+			-- stem of every filename, and it is what an existing album is found
+			-- by - so it is the one thing that cannot be derived from something
+			-- else. The title follows from it and is free to edit.
 			f:row {
 				f:static_text { title = 'Slug:', alignment = 'right', width = share 'label_width' },
 				f:edit_field {
 					value = bind 'slug',
-					enabled = bind 'slugManual',
 					immediate = true,
 					width_in_chars = 24,
-					tooltip = 'Directory name inside the albums folder, and the stem of every filename.',
+					tooltip = 'Lowercase letters, digits and hyphens. Names the album folder and '
+						.. 'every file in it. Type the slug of an album that already exists to '
+						.. 'add to it.',
 				},
-				f:checkbox {
-					title = 'Edit manually',
-					value = bind 'slugManual',
-					tooltip = 'Off: the slug follows the title.',
+				f:static_text {
+					title = 'names the folder, and finds an album that already exists',
+					text_color = LrColor( 0.4, 0.4, 0.4 ),
+				},
+			},
+
+			f:row {
+				f:static_text { title = 'Title:', alignment = 'right', width = share 'label_width' },
+				f:edit_field {
+					value = bind 'albumTitle',
+					immediate = true,
+					fill_horizontal = 1,
+					tooltip = 'Follows the slug until you type your own - "test-hello" gives '
+						.. '"Test Hello". An album that already exists brings its own title.',
 				},
 			},
 

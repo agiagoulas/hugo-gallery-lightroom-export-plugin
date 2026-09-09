@@ -61,6 +61,9 @@ resources:
 ---
 ```
 
+- **The slug is the input.** It names the folder and every file in it, and typing the slug of an
+  album that already exists is how you find it. The title is offered from it — `test-hello` gives
+  `Test Hello` — and is yours to change.
 - **Filenames** are zero-padded (`venice-01.jpg`), so `sort_by: Name` still orders them correctly
   past nine.
 - **EXIF is kept** — aperture, shutter, ISO, lens — because that is what the theme's lightbox
@@ -77,13 +80,13 @@ misconfiguration cannot leave half an album on disk.
 
 ## Adding to an album that already exists
 
-When the title you type resolves to an album that is already there, the Export button stays dimmed
-and says so. Tick **Add to the existing album** and the photos are appended: numbering continues
-from the highest one already there (`venice-43.jpg`…), and existing files are never renamed.
+Type the slug of an album that is already there and the Export button stays dimmed and says so.
+Tick **Add to the existing album** and the photos are appended: numbering continues from the
+highest one already there (`venice-43.jpg`…), and existing files are never renamed.
 
-The tick is deliberate, and it clears itself whenever the slug changes — typing *Dolomites New*
-passes through the exact slug `dolomites` on the way, and appending to that album, or absorbing its
-metadata, is never what you meant.
+The tick is deliberate, and it clears itself whenever the slug changes — a slug is typed one
+character at a time and passes through other albums' slugs on the way, and appending to one of
+those, or absorbing its metadata, is never what you meant.
 
 `index.md` is **merged, not rewritten**. Title, date, description, categories and coordinates are
 updated from the dialog — and the dialog is prefilled with what the file already says, so you are
@@ -92,10 +95,9 @@ manual `sort_by: Params.weight`, the per-photo `title:` captions and `weight:` p
 Markdown below the front matter. The `resources` block is never rewritten, so **the cover of an
 existing album is left alone** — change it in the file.
 
-**Retitling** works because ticking the box also pins the slug. The slug identifies the album and
-is normally derived from the title, so the two have to be separated before the title can be edited
-— once pinned, the title field fills in with what `index.md` currently says and you can change it
-freely. Unticking puts your own title back and lets the slug follow it again.
+**Retitling** needs nothing special: the slug identifies the album and is what you typed, so the
+title is free to change. Ticking the box fills the title field with what `index.md` currently
+says; edit it and the merge writes the new one.
 
 One thing follows from "merge never deletes": clearing a field in the dialog keeps whatever the
 file had rather than removing the key. To remove a key, edit the file.
