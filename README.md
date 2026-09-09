@@ -42,7 +42,7 @@ differs album to album.
 |---|---|
 | **Site folder** | Your site's working copy. Needs a `.git` and a Hugo config under one of the standard names (`hugo.toml`, `config.yaml`, `config/_default/…` and the rest). |
 | **Albums in** | Where album bundles live, relative, forward slashes. `content`, or `content/albums` if they are grouped in a section. |
-| **Long edge / Quality** | 2048px and 92 by default. The theme never serves above 1600px, so 2048 is invisible on the page while leaving headroom — and small enough that photos can live in git. |
+| **Short edge / Quality** | 1365px and 92 by default. The short edge, not the long one: the album grid lays photos out to a common height, so rows are what decide sharpness. 1365 gives an ordinary 3:2 photo 2048×1365 — what a long-edge cap of 2048 gave it — while a wide panorama gets the extra width it needs to stay sharp. |
 | **Write lat/lng** | Off by default. These are **not** theme keys; they only matter if your site has its own map layout. Turning it on adds a Location field to the Export dialog. |
 
 ## What you get
