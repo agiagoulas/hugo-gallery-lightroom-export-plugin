@@ -298,14 +298,14 @@ local function number( key, value )
 	prefsTable[ key ] = value
 	return Prefs.number( key )
 end
-eq( number( 'longEdge', '0' ), 240, 'clamp: a long edge of 0 would export nothing' )
-eq( number( 'longEdge', '99999' ), 10000, 'clamp: upper bound' )
-eq( number( 'longEdge', 'abc' ), 2048, 'clamp: nonsense falls back to the default' )
-eq( number( 'longEdge', '' ), 2048, 'clamp: empty falls back to the default' )
+eq( number( 'shortEdge', '0' ), 240, 'clamp: a short edge of 0 would export nothing' )
+eq( number( 'shortEdge', '99999' ), 10000, 'clamp: upper bound' )
+eq( number( 'shortEdge', 'abc' ), 1365, 'clamp: nonsense falls back to the default' )
+eq( number( 'shortEdge', '' ), 1365, 'clamp: empty falls back to the default' )
 eq( number( 'jpegQuality', '900' ), 100, 'clamp: 900 would become LR_jpeg_quality 9.0' )
 eq( number( 'jpegQuality', '0' ), 1, 'clamp: lower bound' )
 eq( number( 'jpegQuality', '92' ), 92, 'clamp: a sane value is untouched' )
-prefsTable.longEdge, prefsTable.jpegQuality = 2048, 92
+prefsTable.shortEdge, prefsTable.jpegQuality = 1365, 92
 
 --------------------------------------------------------------------------------
 -- Committing only the album. The dialog promises that nothing else of the
@@ -328,7 +328,7 @@ stubs.LrTasks.execute = realExecute
 --------------------------------------------------------------------------------
 -- The locked export settings. A plain function over a plain table, and the two
 -- values in it that would ruin every photo in an album without ever looking like
--- an error: longEdge is read from maxHEIGHT, and quality is a 0..1 fraction.
+-- an error: the cap has to be on the short edge, and quality is a 0..1 fraction.
 
 stubs.LrColor = function() return {} end
 stubs.LrHttp = { openUrlInBrowser = function() end }
@@ -337,15 +337,17 @@ stubs.LrDialogs = { message = function() end, confirm = function() end, runOpenP
 
 package.loaded[ 'HugoAlbumExportServiceProvider' ] = nil
 package.loaded[ 'HugoAlbumExportDialogSections' ] = nil
-prefsTable.longEdge, prefsTable.jpegQuality = 2048, 92
+prefsTable.shortEdge, prefsTable.jpegQuality = 1365, 92
 local provider = require 'HugoAlbumExportServiceProvider'
 
 local settings = {}
 provider.updateExportSettings( settings )
 
-eq( settings.LR_size_maxHeight, 2048, 'export: longEdge is what constrains a longEdge resize' )
-eq( settings.LR_size_maxWidth, 2048, 'export: and the width is set too' )
-eq( settings.LR_size_resizeType, 'longEdge', 'export: resize type' )
+eq( settings.LR_size_resizeType, 'shortEdge',
+	'export: the short edge, so a panorama keeps its rows instead of being squashed' )
+eq( settings.LR_size_maxHeight, 1365, 'export: the cap reaches the size fields' )
+eq( settings.LR_size_maxHeight == settings.LR_size_maxWidth, true,
+	'export: both fields carry it, so which one Lightroom reads for shortEdge cannot matter' )
 eq( settings.LR_jpeg_quality, 0.92, 'export: quality is a 0..1 fraction, not 92' )
 eq( settings.LR_minimizeEmbeddedMetadata, false, 'export: EXIF is kept for the lightbox captions' )
 eq( settings.LR_embeddedMetadataOption, 'all', 'export: ... explicitly' )
@@ -353,12 +355,12 @@ eq( settings.LR_removeLocationMetadata, true, 'export: GPS is stripped from the 
 eq( settings.LR_renamingTokensOn, false, 'export: the plugin names the files itself' )
 eq( settings.LR_format, 'JPEG', 'export: format' )
 
-prefsTable.longEdge, prefsTable.jpegQuality = '900', '1000'
+prefsTable.shortEdge, prefsTable.jpegQuality = '900', '1000'
 local clamped = {}
 provider.updateExportSettings( clamped )
-eq( clamped.LR_size_maxHeight, 900, 'export: a sane custom long edge is honoured' )
+eq( clamped.LR_size_maxHeight, 900, 'export: a sane custom short edge is honoured' )
 eq( clamped.LR_jpeg_quality, 1, 'export: an absurd quality is clamped before the division' )
-prefsTable.longEdge, prefsTable.jpegQuality = 2048, 92
+prefsTable.shortEdge, prefsTable.jpegQuality = 1365, 92
 
 --------------------------------------------------------------------------------
 -- The cover rules that had no coverage: label, flag, ties and position.

@@ -159,14 +159,15 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 			title = 'Export',
 
 			f:row {
-				f:static_text { title = 'Long edge:', alignment = 'right', width = share 'w' },
+				f:static_text { title = 'Short edge:', alignment = 'right', width = share 'w' },
 				f:edit_field {
-					value = pref 'longEdge',
+					value = pref 'shortEdge',
 					immediate = true,
 					width_in_chars = 6,
-					tooltip = 'Pixels, 240-10000. hugo-theme-gallery never serves more than '
-						.. '1600px, so 2048 is invisible on the page while leaving headroom - '
-						.. 'and small enough that the photos can live in git.',
+					tooltip = 'Pixels, 240-10000. The short edge rather than the long one: the '
+						.. 'album grid lays photos out to a common height, so this is what '
+						.. 'decides sharpness. 1365 gives an ordinary 3:2 photo 2048x1365, and '
+						.. 'a wide panorama the extra width it needs.',
 				},
 				f:static_text { title = 'px' },
 				f:static_text { title = 'Quality:' },

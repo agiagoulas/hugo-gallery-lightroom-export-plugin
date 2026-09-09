@@ -22,11 +22,16 @@ Prefs.DEFAULTS = {
 	-- 'content/albums' and the like work just as well.
 	albumsFolder = 'content',
 
-	-- Long edge in pixels and JPEG quality for the exported files. 2048 is a
-	-- deliberate default: hugo-theme-gallery's largest derivative is 1600px, so
-	-- this is invisible on the page while leaving headroom, and it keeps photos
-	-- small enough to live in git.
-	longEdge = 2048,
+	-- SHORT edge in pixels, and JPEG quality.
+	--
+	-- The short edge, not the long one, because hugo-theme-gallery's album grid
+	-- is a justified layout: it lays photos out to a common height, so what
+	-- decides sharpness is how many rows a photo has. Capping the long edge gives
+	-- a 4:1 panorama a quarter of the rows of an ordinary photo, and it shows.
+	--
+	-- 1365 is chosen so an ordinary 3:2 photo comes out at 2048x1365, which is
+	-- what a long edge of 2048 used to give it. Only wide photos get larger.
+	shortEdge = 1365,
 	jpegQuality = 92,
 
 	-- lat/lng in the front matter. Off by default because it is NOT part of
@@ -60,7 +65,7 @@ end
 -- quality of 900 (which becomes LR_jpeg_quality 9.0, far outside its 0..1 range)
 -- would break every photo in the album without ever looking like an error.
 local RANGES = {
-	longEdge = { min = 240, max = 10000 },
+	shortEdge = { min = 240, max = 10000 },
 	jpegQuality = { min = 1, max = 100 },
 }
 

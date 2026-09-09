@@ -45,18 +45,29 @@ function provider.updateExportSettings( exportSettings )
 	exportSettings.LR_jpeg_quality      = Prefs.number( 'jpegQuality' ) / 100   -- the API wants 0..1
 	exportSettings.LR_jpeg_useLimitSize  = false
 
-	-- In longEdge mode the constraint is read from LR_size_maxHeight; setting
-	-- only maxWidth silently does nothing. Both are set deliberately.
-	--
-	-- Exporting at the site's own cap means any resize-on-commit step the repo
-	-- has finds nothing left to do, and the downscale comes straight from the
-	-- RAW instead of a second JPEG round through some other tool.
-	local longEdge = Prefs.number( 'longEdge' )
+	--[[
+	The SHORT edge is the constraint, not the long one.
+
+	The album grid is a justified layout: it lays photos out to a common height,
+	so how many rows a photo has is what decides whether it looks sharp. A
+	long-edge cap gives a 4:1 panorama a quarter of the rows of an ordinary photo
+	- 2048x506 against 2048x1365 - and no amount of care further down the line
+	puts those rows back.
+
+	Which of maxHeight/maxWidth Lightroom reads for a shortEdge resize is not
+	documented. Both are set to the same number, so it cannot matter - that
+	equality is load-bearing, not incidental.
+
+	Exporting at the site's own cap means any resize-on-commit step the repo has
+	finds nothing left to do, and the downscale comes straight from the RAW
+	instead of a second JPEG round through some other tool.
+	]]
+	local shortEdge = Prefs.number( 'shortEdge' )
 	exportSettings.LR_size_doConstrain     = true
-	exportSettings.LR_size_resizeType      = 'longEdge'
+	exportSettings.LR_size_resizeType      = 'shortEdge'
 	exportSettings.LR_size_units           = 'pixels'
-	exportSettings.LR_size_maxHeight       = longEdge
-	exportSettings.LR_size_maxWidth        = longEdge
+	exportSettings.LR_size_maxHeight       = shortEdge
+	exportSettings.LR_size_maxWidth        = shortEdge
 	exportSettings.LR_size_doNotEnlarge    = true
 	exportSettings.LR_size_resolution      = 240
 	exportSettings.LR_size_resolutionUnits = 'inch'
