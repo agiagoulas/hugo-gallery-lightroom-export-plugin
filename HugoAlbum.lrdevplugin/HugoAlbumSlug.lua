@@ -38,10 +38,11 @@ local TRANSLITERATE = {
 -- "Brüssels" -> "bruessels";  'Brüssels & Co: "day one"' -> "bruessels-co-day-one"
 function Slug.slugify( text )
 	if type( text ) ~= 'string' then return '' end
-	local s = text
-	for from, to in pairs( TRANSLITERATE ) do
-		s = s:gsub( from, to )
-	end
+	-- One pass over the UTF-8 sequences, with the table as the replacement: gsub
+	-- leaves a sequence the table has no entry for alone, and the [^a-z0-9] pass
+	-- below collapses it. Looping the table instead meant ~60 full scans and 60
+	-- allocations per keystroke.
+	local s = text:gsub( '[\128-\255][\128-\191]*', TRANSLITERATE )
 	s = s:lower()
 	s = s:gsub( '[^a-z0-9]+', '-' )
 	s = s:gsub( '^%-+', '' ):gsub( '%-+$', '' )

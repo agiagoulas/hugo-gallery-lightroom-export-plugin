@@ -19,22 +19,35 @@ local log   = require 'HugoAlbumLog'
 local PROJECT_URL = 'https://github.com/agiagoulas/hugo-gallery-lightroom-export-plugin'
 local THEME_URL   = 'https://github.com/nicokaiser/hugo-theme-gallery'
 
+-- A stable identity to remove by; see the observer block below.
+local OBSERVER_KEY = {}
+
 local Info = {}
 
 -- Repo.validatePaths stats the file system, which can yield, so it is never
 -- called straight from an observer - see HugoAlbumExportDialogSections for the
 -- longer version of why.
 local function refreshStatus( propertyTable )
+	-- Snapshot first. The field writes to prefs on every keystroke, so a dozen of
+	-- these overlap while a path is typed; without this the panel settles on
+	-- whichever FINISHED last, which is not the same as the one the field now
+	-- holds - and the "Looks good" line could name a path that was never checked,
+	-- because configuredPath() was read again after the yield.
+	local path = Repo.configuredPath()
+
 	LrTasks.startAsyncTask( function()
-		local path = Repo.configuredPath()
+		local status
 		if path == '' then
-			propertyTable.repoStatus = 'No site folder set - exporting is disabled until there is one.'
-			return
+			status = 'No site folder set - exporting is disabled until there is one.'
+		else
+			local problem = Repo.validatePaths { slug = '' }
+			status = problem
+				or ( 'Looks good: albums go to ' .. path .. '/' .. Prefs.folder( 'albumsFolder' ) .. '/' )
 		end
-		local problem = Repo.validatePaths { slug = '' }
-		propertyTable.repoStatus = problem
-			or ( 'Looks good: albums go to ' .. path .. '/' .. Prefs.get( 'albumsFolder' ) .. '/' )
-		log:info( 'site status: ' .. propertyTable.repoStatus )
+
+		if Repo.configuredPath() ~= path then return end   -- a later run owns this
+		propertyTable.repoStatus = status
+		log:info( 'site status: ' .. status )
 	end )
 end
 
@@ -49,8 +62,15 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 
 	propertyTable.repoStatus = ''
 	refreshStatus( propertyTable )
+
+	-- prefs is a session-lifetime table, and this function runs again every time
+	-- the panel is shown. Without a stable key to remove by, each visit added
+	-- another set of observers, so after a few visits one keystroke in Site
+	-- folder fanned out into a dozen filesystem sweeps - most of them writing
+	-- into property tables belonging to closed dialogs.
 	for _, key in ipairs { 'repoPath', 'albumsFolder' } do
-		prefs:addObserver( key, function() refreshStatus( propertyTable ) end )
+		prefs:removeObserver( key, OBSERVER_KEY )
+		prefs:addObserver( key, OBSERVER_KEY, function() refreshStatus( propertyTable ) end )
 	end
 
 	local function link( title, url )

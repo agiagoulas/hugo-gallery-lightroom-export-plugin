@@ -306,6 +306,108 @@ eq( commands[ 2 ]:match( "git' (.-) > " ),
 	'commit: and so is the commit, so nothing already staged rides along' )
 stubs.LrTasks.execute = realExecute
 
+
+--------------------------------------------------------------------------------
+-- The locked export settings. A plain function over a plain table, and the two
+-- values in it that would ruin every photo in an album without ever looking like
+-- an error: longEdge is read from maxHEIGHT, and quality is a 0..1 fraction.
+
+stubs.LrColor = function() return {} end
+stubs.LrHttp = { openUrlInBrowser = function() end }
+stubs.LrView = { bind = function() end, share = function() end }
+stubs.LrDialogs = { message = function() end, confirm = function() end, runOpenPanel = function() end }
+
+package.loaded[ 'HugoAlbumExportServiceProvider' ] = nil
+package.loaded[ 'HugoAlbumExportDialogSections' ] = nil
+prefsTable.longEdge, prefsTable.jpegQuality = 2048, 92
+local provider = require 'HugoAlbumExportServiceProvider'
+
+local settings = {}
+provider.updateExportSettings( settings )
+
+eq( settings.LR_size_maxHeight, 2048, 'export: longEdge is what constrains a longEdge resize' )
+eq( settings.LR_size_maxWidth, 2048, 'export: and the width is set too' )
+eq( settings.LR_size_resizeType, 'longEdge', 'export: resize type' )
+eq( settings.LR_jpeg_quality, 0.92, 'export: quality is a 0..1 fraction, not 92' )
+eq( settings.LR_minimizeEmbeddedMetadata, false, 'export: EXIF is kept for the lightbox captions' )
+eq( settings.LR_embeddedMetadataOption, 'all', 'export: ... explicitly' )
+eq( settings.LR_removeLocationMetadata, true, 'export: GPS is stripped from the files' )
+eq( settings.LR_renamingTokensOn, false, 'export: the plugin names the files itself' )
+eq( settings.LR_format, 'JPEG', 'export: format' )
+
+prefsTable.longEdge, prefsTable.jpegQuality = '900', '1000'
+local clamped = {}
+provider.updateExportSettings( clamped )
+eq( clamped.LR_size_maxHeight, 900, 'export: a sane custom long edge is honoured' )
+eq( clamped.LR_jpeg_quality, 1, 'export: an absurd quality is clamped before the division' )
+prefsTable.longEdge, prefsTable.jpegQuality = 2048, 92
+
+--------------------------------------------------------------------------------
+-- The cover rules that had no coverage: label, flag, ties and position.
+
+package.loaded[ 'HugoAlbumMetadata' ] = nil
+stubs.LrApplication = { activeCatalog = function()
+	return { batchGetRawMetadata = function( _, photos )
+		local out = {}
+		for _, ph in ipairs( photos ) do out[ ph ] = ph.fields end
+		return out
+	end }
+end }
+Metadata = require 'HugoAlbumMetadata'
+
+local red   = photo( 'a.jpg', { fileName = 'a.jpg', colorNameForLabel = 'Red', rating = 3 } )
+local blue  = photo( 'b.jpg', { fileName = 'b.jpg', colorNameForLabel = 'blue', pickStatus = 1, rating = 3 } )
+local plain = photo( 'c.jpg', { fileName = 'c.jpg', colorNameForLabel = 'none', pickStatus = 0 } )
+local set = { red, blue, plain }
+local setMeta = Metadata.read( set )
+
+local function cover( rules )
+	local r = Metadata.resolve( set, rules, setMeta )
+	return tostring( r.coverIndex ) .. '/' .. r.coverCount
+end
+
+eq( cover { coverRule = 'label', coverLabel = 'red' }, '1/1',
+	'cover: the label comparison is case-insensitive both ways' )
+eq( cover { coverRule = 'label', coverLabel = 'BLUE' }, '2/1', 'cover: ... and on the setting too' )
+eq( cover { coverRule = 'label', coverLabel = 'green' }, 'nil/0', 'cover: no match leaves it unset' )
+eq( cover { coverRule = 'flag' }, '2/1', 'cover: pick flag' )
+eq( cover { coverRule = 'rating' }, '1/2', 'cover: a tie goes to the first, and is reported as a tie' )
+eq( cover { coverRule = 'first' }, '1/1', 'cover: first' )
+eq( cover { coverRule = 'last' }, '3/1', 'cover: last' )
+eq( cover { coverRule = 'position', coverPosition = 2 }, '2/1', 'cover: an explicit number' )
+eq( cover { coverRule = 'position', coverPosition = 9 }, 'nil/0', 'cover: out of range leaves it unset' )
+eq( cover { coverRule = 'position', coverPosition = 'x' }, 'nil/0', 'cover: not a number' )
+
+-- Appending: the cover filename must carry the offset, or it names a photo from
+-- the wrong end of the album.
+local appended = Metadata.merge(
+	{ slug = 'venice', albumTitle = 'V', albumDate = '2026-01-01', location = '', categories = '' },
+	{ coverIndex = 2, coverCount = 1, date = '2026-01-01' },
+	{ offset = 42, width = 2 } )
+eq( appended.cover, 'venice-44.jpg', 'cover: an appended batch names the file it actually wrote' )
+
+--------------------------------------------------------------------------------
+-- validateFields' date and coordinate branches.
+
+prefsTable.writeCoordinates = true
+package.loaded[ 'HugoAlbumRepo' ] = nil
+Repo = require 'HugoAlbumRepo'
+
+local function fields( over )
+	local t = { slug = 'venice', albumTitle = 'Venice', albumDate = '2026-05-02', location = '' }
+	for k, v in pairs( over or {} ) do t[ k ] = v end
+	return Repo.validateFields( t )
+end
+
+eq( fields(), nil, 'fields: a complete set passes' )
+eq( fields { albumDate = '2026-5-2' }, 'Date must be YYYY-MM-DD.', 'fields: a loose date is refused' )
+eq( fields { albumDate = '' }, 'Date must be YYYY-MM-DD.', 'fields: an empty date is refused' )
+eq( fields { location = '45.4408, 12.3155' }, nil, 'fields: readable coordinates pass' )
+eq( fields { location = 'Venice' } ~= nil, true, 'fields: a place name is refused' )
+prefsTable.writeCoordinates = false
+eq( fields { location = 'Venice' }, nil,
+	'fields: with coordinates off, a stale value cannot dim Export over a hidden field' )
+
 --------------------------------------------------------------------------------
 
 io.write( '\n', failures == 0 and 'all command tests passed\n' or ( failures .. ' FAILURES\n' ) )
