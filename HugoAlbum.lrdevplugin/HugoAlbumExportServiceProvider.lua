@@ -248,8 +248,8 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	local createdDir = false
 	local succeeded = false
 	local written, failures, takenBy = 0, {}, {}
+	local cancelledRenders = 0
 	local reported = false
-	local progress
 
 	--[[
 	Tidying up and reporting both live here, because this is the one place that
@@ -275,12 +275,10 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 			and ( ' ' .. Repo.albumRelPath( slug ) .. ' was removed.' )
 			or ( ' The photos already added were left in place.' )
 
-		-- The scope decides, not the failure list. Cancelling makes the rendition
-		-- that was in flight fail with no message at all, so judging by "did
-		-- anything fail" reported a cancel as "Wrote 2 of 3 photos / Render
-		-- failed: nil". A missing scope falls back to calling it a cancellation,
-		-- which is the harmless direction to be wrong in.
-		local cancelled = ( not progress ) or progress:isCanceled()
+		-- Cancelling makes the render that was in flight fail with no reason
+		-- attached; those are counted separately, so what is left in `failures`
+		-- is only ever something that actually went wrong.
+		local cancelled = #failures == 0
 		local message
 		if cancelled then
 			message = string.format( 'Cancelled after %d of %d photos.%s', written, total, removed )
@@ -289,7 +287,8 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 				written, total, removed, table.concat( failures, '\n' ) )
 		end
 
-		log:warn( message )
+		log:warn( string.format( '%s (%d renders stopped without a reason)',
+			message, cancelledRenders ) )
 		LrDialogs.message( 'Album ' .. slug .. ' was not completed', message,
 			cancelled and 'info' or 'critical' )
 	end )
@@ -297,9 +296,7 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	LrFileUtils.createAllDirectories( albumDir )
 	createdDir = ( existing == nil )
 
-	-- Kept, rather than discarded as it was: it is the only reliable way to tell
-	-- "the user cancelled" from "something went wrong" once the loop has ended.
-	progress = exportContext:configureProgress { title = 'Building album ' .. slug }
+	exportContext:configureProgress { title = 'Building album ' .. slug }
 
 	--[[
 	A rendition that goes wrong is reported to Lightroom and the loop carries on.
@@ -318,12 +315,14 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 
 		local ok, pathOrMessage = rendition:waitForRender()
 		if not ok then
-			-- A render that failed because the export is being cancelled is not a
-			-- fault of its own, and listing it would bury the actual reason.
-			if progress and progress:isCanceled() then
+			if pathOrMessage == nil then
+				-- Cancelling is what this looks like from in here: the render in
+				-- flight fails and Lightroom gives no reason. Reporting it as
+				-- "Render failed: nil" says nothing to anybody.
+				cancelledRenders = cancelledRenders + 1
 				rendition:renditionIsDone( false, 'Export cancelled' )
 			else
-				fail( 'Render failed: ' .. tostring( pathOrMessage or 'no reason given' ) )
+				fail( 'Render failed: ' .. tostring( pathOrMessage ) )
 			end
 		else
 			-- Index by uuid, not by the loop counter: renditions do not
