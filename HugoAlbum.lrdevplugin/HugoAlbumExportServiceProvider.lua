@@ -10,6 +10,7 @@ the deploy, and that stays a deliberate act.
 local LrDialogs   = import 'LrDialogs'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
+local LrTasks     = import 'LrTasks'
 
 local FrontMatter = require 'HugoAlbumFrontMatter'
 local Metadata    = require 'HugoAlbumMetadata'
@@ -287,10 +288,20 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 				written, total, removed, table.concat( failures, '\n' ) )
 		end
 
+		-- Logged before the dialog on purpose: if this line is in the log and no
+		-- dialog appeared, the handler ran and the dialog itself was suppressed,
+		-- which is a different problem from the handler never running.
 		log:warn( string.format( '%s (%d renders stopped without a reason)',
 			message, cancelledRenders ) )
-		LrDialogs.message( 'Album ' .. slug .. ' was not completed', message,
-			cancelled and 'info' or 'critical' )
+
+		-- 'warning' rather than 'info' for the cancel. A cancelled export showed
+		-- nothing at all while this said 'info', where the identical call at
+		-- 'critical' had been showing - so the style is the only thing that had
+		-- changed, and this is the least alarming one still known to appear.
+		local shown, err = LrTasks.pcall( LrDialogs.message,
+			'Album ' .. slug .. ' was not completed', message,
+			cancelled and 'warning' or 'critical' )
+		if not shown then log:error( 'could not show the summary: ' .. tostring( err ) ) end
 	end )
 
 	LrFileUtils.createAllDirectories( albumDir )
