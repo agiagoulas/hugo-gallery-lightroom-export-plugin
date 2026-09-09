@@ -24,5 +24,5 @@ return {
 	LrPluginInfoUrl = 'https://github.com/agiagoulas/hugo-gallery-lightroom-export-plugin',
 	LrPluginInfoProvider = 'HugoGalleryPluginInfoProvider.lua',
 
-	VERSION = { major = 0, minor = 1, revision = 0, build = 1 },
+	VERSION = { major = 1, minor = 0, revision = 0, build = 0 },
 }
