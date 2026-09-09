@@ -242,6 +242,11 @@ local function applyExistingValues( propertyTable )
 	local resolved = state.resolved
 
 	if values then
+		-- Safe only because ticking the box pins the slug. The album is found BY
+		-- the slug and the slug is derived from the title, so filling the title in
+		-- while it still followed would move the slug onto a different album - the
+		-- reason this was left out until now.
+		prefill( propertyTable, 'albumTitle', values.title )
 		prefill( propertyTable, 'albumDate', values.date )
 		prefill( propertyTable, 'description', values.description )
 		prefill( propertyTable, 'categories', values.categories )
@@ -305,6 +310,7 @@ function Sections.startDialog( propertyTable )
 	propertyTable.albumDate, propertyTable.location = '', ''
 	propertyTable.hasLocation, propertyTable.locationEcho = false, ''
 	propertyTable.updateExisting, propertyTable.albumExists = false, false
+	state.pinnedSlug, state.titleBeforeUpdate = false, nil
 	state.autoFilled = {}
 
 	propertyTable.dateChoices = {}   -- filled once the catalog has been read
@@ -325,11 +331,34 @@ function Sections.startDialog( propertyTable )
 	-- checks redone. The repo itself is fixed for the session - it is set in the
 	-- Plug-in Manager, not here.
 	propertyTable:addObserver( 'slug', function()
-		-- Consent is per album: a different slug is a different decision.
+		-- Consent is per album: a different slug is a different decision. The pin
+		-- is released here rather than reverted, because a slug that moved while
+		-- pinned means the user is steering by slug - taking the field away from
+		-- them mid-edit would be the wrong response to that.
+		state.pinnedSlug = false
 		propertyTable.updateExisting = false
 		refreshPaths( propertyTable )
 	end )
+
 	propertyTable:addObserver( 'updateExisting', function()
+		if propertyTable.updateExisting then
+			-- Pin before anything fills the title in. This is what makes retitling
+			-- an existing album possible: the slug identifies it, the title is
+			-- just content, and until now the two could not be separated.
+			state.titleBeforeUpdate = propertyTable.albumTitle
+			if not propertyTable.slugManual then
+				state.pinnedSlug = true
+				propertyTable.slugManual = true
+			end
+
+		elseif state.pinnedSlug then
+			-- A deliberate untick, not a slug that moved: put back the title the
+			-- user had typed and let the slug follow it again.
+			prefill( propertyTable, 'albumTitle', state.titleBeforeUpdate )
+			state.pinnedSlug = false
+			propertyTable.slugManual = false
+		end
+
 		applyExistingValues( propertyTable )
 		update( propertyTable )
 	end )
@@ -443,8 +472,9 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 					value = bind 'updateExisting',
 					enabled = bind 'albumExists',
 					tooltip = 'Appends the photos and merges index.md instead of refusing. '
-						.. 'Clears itself whenever the slug changes, so consent is never '
-						.. 'carried from one album to another.',
+						.. 'Pins the slug, so the title becomes free to edit - that is how you '
+						.. 'retitle an album. Clears itself whenever the slug changes, so '
+						.. 'consent is never carried from one album to another.',
 				},
 			},
 

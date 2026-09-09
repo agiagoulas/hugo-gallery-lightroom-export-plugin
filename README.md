@@ -92,9 +92,13 @@ manual `sort_by: Params.weight`, the per-photo `title:` captions and `weight:` p
 Markdown below the front matter. The `resources` block is never rewritten, so **the cover of an
 existing album is left alone** — change it in the file.
 
-Two things follow from "merge never deletes": clearing a field in the dialog keeps whatever the
-file had rather than removing the key, and the title you type wins, which is how you retitle an
-album. The preview names the current title so the change is never invisible.
+**Retitling** works because ticking the box also pins the slug. The slug identifies the album and
+is normally derived from the title, so the two have to be separated before the title can be edited
+— once pinned, the title field fills in with what `index.md` currently says and you can change it
+freely. Unticking puts your own title back and lets the slug follow it again.
+
+One thing follows from "merge never deletes": clearing a field in the dialog keeps whatever the
+file had rather than removing the key. To remove a key, edit the file.
 
 ## Development
 
