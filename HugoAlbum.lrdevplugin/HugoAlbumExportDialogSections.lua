@@ -435,6 +435,9 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 						.. 'every file in it. Type the slug of an album that already exists to '
 						.. 'add to it.',
 				},
+			},
+			f:row {
+				f:static_text { title = '', width = share 'label_width' },
 				f:static_text {
 					title = 'names the folder, and finds an album that already exists',
 					text_color = LrColor( 0.4, 0.4, 0.4 ),
