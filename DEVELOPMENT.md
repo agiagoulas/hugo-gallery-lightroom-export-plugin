@@ -70,6 +70,13 @@ opens.
   context fails with *"must not be called after exportSession has started rendering"*, which then
   masks whatever the real reason for the abort was.
 
+- **Never raise out of the rendition loop.** A failure inside it is reported with
+  `rendition:renditionIsDone(false, msg)`, collected, and the loop continues so the iterator
+  drains; the failures are reported once at the end. Raising instead leaves renditions unconsumed
+  and Lightroom waiting on the iterator. This shape is verified — cancelling an export mid-render
+  reports cleanly and does not hang — so it is not the tangle it looks like, and collapsing it back
+  into an `error()` would reintroduce the hang.
+
 - **`photosToExport()` yields a bare photo** — `for photo in ...`, not `for i, photo in ...`.
   Getting that wrong gives a silently empty list, not an error. The plugin sidesteps it entirely by
   taking the photo order from `exportSession:renditions()`, which is by definition the exact set
