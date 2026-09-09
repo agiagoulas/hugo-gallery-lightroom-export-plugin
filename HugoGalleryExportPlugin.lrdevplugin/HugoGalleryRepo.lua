@@ -6,10 +6,10 @@ local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 local LrTasks     = import 'LrTasks'
 
-local Coords = require 'HugoAlbumCoords'
-local Prefs  = require 'HugoAlbumPrefs'
-local Slug   = require 'HugoAlbumSlug'
-local log  = require 'HugoAlbumLog'
+local Coords = require 'HugoGalleryCoords'
+local Prefs  = require 'HugoGalleryPrefs'
+local Slug   = require 'HugoGallerySlug'
+local log  = require 'HugoGalleryLog'
 
 local Repo = {}
 
@@ -174,7 +174,7 @@ task.
 ]]
 function Repo.git( repoPath, args )
 	local outFile = LrPathUtils.child( LrPathUtils.getStandardFilePath( 'temp' ),
-		'hugo-album-git-' .. tostring( math.random( 1, 1000000000 ) ) .. '.txt' )
+		'hugo-gallery-export-git-' .. tostring( math.random( 1, 1000000000 ) ) .. '.txt' )
 
 	local parts = {}
 	if not IS_WIN then parts[ #parts + 1 ] = MAC_PATH end
@@ -286,7 +286,7 @@ end
 function Repo.validatePaths( settings )
 	local repoPath = Repo.configuredPath()
 	if repoPath == '' then
-		return 'Set the site folder in File > Plug-in Manager > Hugo Album Export.', false
+		return 'Set the site folder in File > Plug-in Manager > Hugo Gallery Export Plugin.', false
 	end
 	if not LrFileUtils.exists( LrPathUtils.child( repoPath, '.git' ) ) then
 		return 'Not a git repository: ' .. repoPath, false

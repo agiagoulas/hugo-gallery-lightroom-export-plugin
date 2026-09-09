@@ -1,4 +1,4 @@
-# Hugo Album
+# Hugo Gallery Export Plugin
 
 A Lightroom Classic export plugin for [Hugo](https://gohugo.io) sites built on
 [hugo-theme-gallery](https://github.com/nicokaiser/hugo-theme-gallery). Select photos, fill in a
@@ -6,7 +6,7 @@ title, export — you get a finished album folder with correctly sized JPEGs and
 `index.md`.
 
 ```
-Export → Hugo Album              content/venice/
+Export → Hugo Gallery              content/venice/
   Title: Venice              →     venice-01.jpg … venice-42.jpg
   Categories: travel               index.md
   ☑ Create branch and commit       (on branch album/venice)
@@ -26,13 +26,13 @@ button in the Plug-in Manager.
 
 ## Install
 
-1. Download `HugoAlbum-vX.Y.Z.zip` from the [latest release][releases] and unzip it. It contains
-   the `HugoAlbum.lrdevplugin` folder ready to use. (Cloning works too — the plugin is then the
-   `HugoAlbum.lrdevplugin` folder **inside** the repository, not the folder you cloned.)
-2. **File → Plug-in Manager → Add**, select that `HugoAlbum.lrdevplugin` folder.
+1. Download `HugoGalleryExportPlugin-vX.Y.Z.zip` from the [latest release][releases] and unzip it.
+   It contains the `HugoGalleryExportPlugin.lrdevplugin` folder, ready to use. (Cloning works too —
+   the plugin is then that folder **inside** the repository, not the folder you cloned.)
+2. **File → Plug-in Manager → Add**, select that `HugoGalleryExportPlugin.lrdevplugin` folder.
 3. In the same window, set **Site folder**. The panel tells you straight away whether it found a
    Hugo config, a git repo and your albums folder.
-4. Select photos → **File → Export** → *Export To: Hugo Album*.
+4. Select photos → **File → Export** → *Export To: Hugo Gallery*.
 
 Everything in the Plug-in Manager is set once per machine; the Export dialog only asks for what
 differs album to album.

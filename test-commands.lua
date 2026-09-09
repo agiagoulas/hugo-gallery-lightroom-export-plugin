@@ -1,5 +1,5 @@
 --[[
-Checks the git command lines HugoAlbumRepo builds, on both platforms.
+Checks the git command lines HugoGalleryRepo builds, on both platforms.
 
 This is the one part of the plugin that cannot be exercised any other way: it
 leaves the SDK, and the Windows half has never run on Windows. So the SDK is
@@ -9,7 +9,7 @@ that would actually be handed to the shell, not a re-implementation of it.
 	luajit test-commands.lua
 ]]
 
-package.path = './HugoAlbum.lrdevplugin/?.lua;' .. package.path
+package.path = './HugoGalleryExportPlugin.lrdevplugin/?.lua;' .. package.path
 
 local failures = 0
 local function eq( got, want, label )
@@ -22,7 +22,7 @@ local function eq( got, want, label )
 end
 
 --------------------------------------------------------------------------------
--- Minimal SDK stubs. Only what HugoAlbumRepo and its requires actually touch.
+-- Minimal SDK stubs. Only what HugoGalleryRepo and its requires actually touch.
 
 local executed, sep, tempDir, existing
 
@@ -54,10 +54,10 @@ end
 -- IS_WIN is decided when the module loads, so each platform needs a fresh one.
 local function loadRepo( isWindows )
 	WIN_ENV = isWindows or nil
-	for _, m in ipairs { 'HugoAlbumRepo', 'HugoAlbumPrefs', 'HugoAlbumLog', 'HugoAlbumCoords', 'HugoAlbumSlug' } do
+	for _, m in ipairs { 'HugoGalleryRepo', 'HugoGalleryPrefs', 'HugoGalleryLog', 'HugoGalleryCoords', 'HugoGallerySlug' } do
 		package.loaded[ m ] = nil
 	end
-	return require 'HugoAlbumRepo'
+	return require 'HugoGalleryRepo'
 end
 
 --------------------------------------------------------------------------------
@@ -205,8 +205,8 @@ stubs.LrApplication = { activeCatalog = function()
 	end }
 end }
 
-package.loaded[ 'HugoAlbumMetadata' ] = nil
-local Metadata = require 'HugoAlbumMetadata'
+package.loaded[ 'HugoGalleryMetadata' ] = nil
+local Metadata = require 'HugoGalleryMetadata'
 
 local meta = Metadata.read( shot )
 eq( batchCalls, 1, 'metadata: one batch call for the whole selection' )
@@ -238,8 +238,8 @@ eq( resolved.coverCount, 1, 'resolve: one clear winner' )
 stubs.LrApplication = { activeCatalog = function()
 	return { batchGetRawMetadata = function() error( 'nope' ) end }
 end }
-package.loaded[ 'HugoAlbumMetadata' ] = nil
-Metadata = require 'HugoAlbumMetadata'
+package.loaded[ 'HugoGalleryMetadata' ] = nil
+Metadata = require 'HugoGalleryMetadata'
 local fallback = Metadata.read( shot )
 eq( fallback[ earlier ].path, '/photos/a.jpg', 'metadata: falls back to per-photo reads' )
 eq( Metadata.resolve( shot, { coverRule = 'first' }, fallback ).date, '2026-05-02',
@@ -264,12 +264,12 @@ eq( survived[ hostile ].rating, nil, 'metadata: ... and the rejected one is simp
 -- decides where albums are written; the numeric fields go straight into the
 -- export API.
 
-package.loaded[ 'HugoAlbumPrefs' ] = nil
-package.loaded[ 'HugoAlbumRepo' ] = nil
+package.loaded[ 'HugoGalleryPrefs' ] = nil
+package.loaded[ 'HugoGalleryRepo' ] = nil
 local prefsTable = { repoPath = '/site', albumsFolder = 'content' }
 stubs.LrPrefs.prefsForPlugin = function() return prefsTable end
-local Prefs = require 'HugoAlbumPrefs'
-Repo = require 'HugoAlbumRepo'
+local Prefs = require 'HugoGalleryPrefs'
+Repo = require 'HugoGalleryRepo'
 
 local function folder( value )
 	prefsTable.albumsFolder = value
@@ -335,10 +335,10 @@ stubs.LrHttp = { openUrlInBrowser = function() end }
 stubs.LrView = { bind = function() end, share = function() end }
 stubs.LrDialogs = { message = function() end, confirm = function() end, runOpenPanel = function() end }
 
-package.loaded[ 'HugoAlbumExportServiceProvider' ] = nil
-package.loaded[ 'HugoAlbumExportDialogSections' ] = nil
+package.loaded[ 'HugoGalleryExportServiceProvider' ] = nil
+package.loaded[ 'HugoGalleryExportDialogSections' ] = nil
 prefsTable.shortEdge, prefsTable.jpegQuality = 1365, 92
-local provider = require 'HugoAlbumExportServiceProvider'
+local provider = require 'HugoGalleryExportServiceProvider'
 
 local settings = {}
 provider.updateExportSettings( settings )
@@ -365,7 +365,7 @@ prefsTable.shortEdge, prefsTable.jpegQuality = 1365, 92
 --------------------------------------------------------------------------------
 -- The cover rules that had no coverage: label, flag, ties and position.
 
-package.loaded[ 'HugoAlbumMetadata' ] = nil
+package.loaded[ 'HugoGalleryMetadata' ] = nil
 stubs.LrApplication = { activeCatalog = function()
 	return { batchGetRawMetadata = function( _, photos )
 		local out = {}
@@ -373,7 +373,7 @@ stubs.LrApplication = { activeCatalog = function()
 		return out
 	end }
 end }
-Metadata = require 'HugoAlbumMetadata'
+Metadata = require 'HugoGalleryMetadata'
 
 local red   = photo( 'a.jpg', { fileName = 'a.jpg', colorNameForLabel = 'Red', rating = 3 } )
 local blue  = photo( 'b.jpg', { fileName = 'b.jpg', colorNameForLabel = 'blue', pickStatus = 1, rating = 3 } )
@@ -410,8 +410,8 @@ eq( appended.cover, 'venice-44.jpg', 'cover: an appended batch names the file it
 -- validateFields' date and coordinate branches.
 
 prefsTable.writeCoordinates = true
-package.loaded[ 'HugoAlbumRepo' ] = nil
-Repo = require 'HugoAlbumRepo'
+package.loaded[ 'HugoGalleryRepo' ] = nil
+Repo = require 'HugoGalleryRepo'
 
 local function fields( over )
 	local t = { slug = 'venice', albumTitle = 'Venice', albumDate = '2026-05-02', location = '' }

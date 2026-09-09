@@ -9,7 +9,7 @@ enough to fix the command quoting without access to a Windows machine — see
 [docs/windows-port.md](../../docs/windows-port.md).
 
 **Output of "Test git"**
-Plug-in Manager → Hugo Album Export → *Test git*. Paste it whole, including the
+Plug-in Manager → Hugo Gallery Export Plugin → *Test git*. Paste it whole, including the
 command lines.
 
 ```

@@ -1,5 +1,5 @@
 --[[
-Hugo Album export service.
+Hugo Gallery export service.
 
 Renders the selected photos at the configured long edge, moves them into
 <albums folder>/<slug>/ under sequential names, writes index.md, and optionally
@@ -12,13 +12,13 @@ local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 local LrTasks     = import 'LrTasks'
 
-local FrontMatter = require 'HugoAlbumFrontMatter'
-local Metadata    = require 'HugoAlbumMetadata'
-local Prefs       = require 'HugoAlbumPrefs'
-local Repo        = require 'HugoAlbumRepo'
-local Sections    = require 'HugoAlbumExportDialogSections'
-local Slug        = require 'HugoAlbumSlug'
-local log         = require 'HugoAlbumLog'
+local FrontMatter = require 'HugoGalleryFrontMatter'
+local Metadata    = require 'HugoGalleryMetadata'
+local Prefs       = require 'HugoGalleryPrefs'
+local Repo        = require 'HugoGalleryRepo'
+local Sections    = require 'HugoGalleryExportDialogSections'
+local Slug        = require 'HugoGallerySlug'
+local log         = require 'HugoGalleryLog'
 
 local provider = {}
 
@@ -121,7 +121,7 @@ local function abort( exportContext, message )
 
 	-- Report before touching the renditions: if consuming them throws, the user
 	-- has still been told what actually went wrong.
-	LrDialogs.message( 'Hugo Album export cancelled', message, 'critical' )
+	LrDialogs.message( 'Hugo Gallery export cancelled', message, 'critical' )
 
 	-- Iterate the SESSION, not the context. exportContext:renditions() is what
 	-- starts the rendering, and skipRender() is illegal once it has - calling it

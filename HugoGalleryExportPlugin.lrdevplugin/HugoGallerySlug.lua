@@ -2,7 +2,7 @@
 Slug derivation and filename padding.
 
 Pure Lua on purpose: no `Lr*` imports, so this can be exercised under a plain
-`lua` interpreter (see ../DEVELOPMENT.md). Together with HugoAlbumFrontMatter these
+`lua` interpreter (see ../DEVELOPMENT.md). Together with HugoGalleryFrontMatter these
 are the two modules that can silently corrupt an album, which is exactly why
 they are testable outside Lightroom.
 ]]

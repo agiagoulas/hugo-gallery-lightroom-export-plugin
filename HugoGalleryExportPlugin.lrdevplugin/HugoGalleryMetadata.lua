@@ -10,11 +10,11 @@ local LrDate        = import 'LrDate'
 local LrPathUtils   = import 'LrPathUtils'
 local LrTasks       = import 'LrTasks'
 
-local Coords      = require 'HugoAlbumCoords'
-local FrontMatter = require 'HugoAlbumFrontMatter'
-local Prefs       = require 'HugoAlbumPrefs'
-local Slug        = require 'HugoAlbumSlug'
-local log         = require 'HugoAlbumLog'
+local Coords      = require 'HugoGalleryCoords'
+local FrontMatter = require 'HugoGalleryFrontMatter'
+local Prefs       = require 'HugoGalleryPrefs'
+local Slug        = require 'HugoGallerySlug'
+local log         = require 'HugoGalleryLog'
 
 local Metadata = {}
 

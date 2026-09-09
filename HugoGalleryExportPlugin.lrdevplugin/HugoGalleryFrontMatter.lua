@@ -1,7 +1,7 @@
 --[[
 Renders an album table into the YAML front matter of an album's index.md.
 
-Pure Lua on purpose (see HugoAlbumSlug.lua for why).
+Pure Lua on purpose (see HugoGallerySlug.lua for why).
 
 Field order is fixed so a diff against a hand-written album reads cleanly:
 

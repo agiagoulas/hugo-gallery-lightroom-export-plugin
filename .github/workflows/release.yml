@@ -26,7 +26,7 @@ jobs:
       # it beats pattern-matching the source and cannot drift from the format.
       - id: version
         run: |
-          v=$(luajit -e 'local i = dofile("HugoAlbum.lrdevplugin/Info.lua")
+          v=$(luajit -e 'local i = dofile("HugoGalleryExportPlugin.lrdevplugin/Info.lua")
             io.write(("%d.%d.%d"):format(i.VERSION.major, i.VERSION.minor, i.VERSION.revision))')
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
           echo "Manifest version: v$v"
@@ -52,7 +52,7 @@ jobs:
       # which is exactly where people get stuck.
       - if: steps.check.outputs.release == 'true'
         run: |
-          zip -r "HugoAlbum-${{ steps.version.outputs.tag }}.zip" HugoAlbum.lrdevplugin \
+          zip -r "HugoGalleryExportPlugin-${{ steps.version.outputs.tag }}.zip" HugoGalleryExportPlugin.lrdevplugin \
             -x '*.DS_Store'
 
       - if: steps.check.outputs.release == 'true'
@@ -60,6 +60,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
-            "HugoAlbum-${{ steps.version.outputs.tag }}.zip" \
+            "HugoGalleryExportPlugin-${{ steps.version.outputs.tag }}.zip" \
             --title "${{ steps.version.outputs.tag }}" \
             --generate-notes

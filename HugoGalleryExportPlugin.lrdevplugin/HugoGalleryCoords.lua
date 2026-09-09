@@ -8,7 +8,7 @@ hand, in whichever notation they were copied from:
 	45.4408 12.3155
 	46°32'25.8"N 12°08'08.5"E
 
-Pure Lua on purpose (see HugoAlbumSlug.lua for why).
+Pure Lua on purpose (see HugoGallerySlug.lua for why).
 ]]
 
 local Coords = {}

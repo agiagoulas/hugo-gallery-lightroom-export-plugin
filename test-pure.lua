@@ -5,11 +5,11 @@ silently corrupt content/ if their escaping or padding is wrong.
 	luajit test-pure.lua      (brew install luajit)
 ]]
 
-package.path = './HugoAlbum.lrdevplugin/?.lua;' .. package.path
+package.path = './HugoGalleryExportPlugin.lrdevplugin/?.lua;' .. package.path
 
-local Slug        = require 'HugoAlbumSlug'
-local FrontMatter = require 'HugoAlbumFrontMatter'
-local Coords      = require 'HugoAlbumCoords'
+local Slug        = require 'HugoGallerySlug'
+local FrontMatter = require 'HugoGalleryFrontMatter'
+local Coords      = require 'HugoGalleryCoords'
 
 local failures = 0
 

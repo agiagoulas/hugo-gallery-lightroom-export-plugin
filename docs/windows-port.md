@@ -7,7 +7,7 @@ what to report.
 ## What was platform-specific
 
 Only one thing in the plugin ever leaves the Lightroom SDK: the git wrapper in
-`HugoAlbumRepo.lua`. Everything else — the dialog, the export settings, filenames, front matter,
+`HugoGalleryRepo.lua`. Everything else — the dialog, the export settings, filenames, front matter,
 file IO — goes through `LrPathUtils`, `LrFileUtils` and `io`, which Adobe keeps portable. There is
 exactly one `LrTasks.execute` in the whole plugin, no `os.execute` and no `io.popen`.
 
@@ -31,7 +31,7 @@ line endings depending on who exported it.
 
 ## What is checked automatically
 
-`make test` runs `test-commands.lua`, which stubs the SDK, loads the real `HugoAlbumRepo`, and
+`make test` runs `test-commands.lua`, which stubs the SDK, loads the real `HugoGalleryRepo`, and
 asserts the command line it builds — for both platforms. It covers the git path probe and its
 fallback, the omitted `PATH` prefix, double-quoting, the outer cmd.exe wrapper, and that a path
 containing a `"` is refused. That is not proof the plugin works on Windows, but it does mean the
@@ -50,7 +50,7 @@ Expected on a working setup:
 Platform: Windows
 git: C:\Program Files\Git\cmd\git.exe
 
-""C:\Program Files\Git\cmd\git.exe" "--version" > "C:\Users\...\Temp\hugo-album-git-123.txt" 2>&1"
+""C:\Program Files\Git\cmd\git.exe" "--version" > "C:\Users\...\Temp\hugo-gallery-export-git-123.txt" 2>&1"
   -> status 0: git version 2.4x.x.windows.1
 
 ""C:\Program Files\Git\cmd\git.exe" -C "C:\Users\...\My Site" "rev-parse" "--abbrev-ref" "HEAD" > "..." 2>&1"
@@ -63,7 +63,7 @@ A non-zero status, or output like `'C:\Program' is not recognized`, means the qu
 
 - The whole Windows path, end to end. Nobody has run it.
 - The log location. On macOS it is
-  `~/Library/Logs/Adobe/Lightroom/LrClassicLogs/HugoAlbum.log`; the Windows equivalent is
+  `~/Library/Logs/Adobe/Lightroom/LrClassicLogs/HugoGallery.log`; the Windows equivalent is
   documented nowhere reliable, so the plugin does not claim one.
 - Whether `LrTasks.execute`'s exit status is scaled the same way. It does not currently matter —
   the code only ever tests `== 0` — but it would if anyone wanted to distinguish git's exit codes.

@@ -3,18 +3,18 @@
 ## Layout
 
 ```
-HugoAlbum.lrdevplugin/
+HugoGalleryExportPlugin.lrdevplugin/
   Info.lua                             manifest
-  HugoAlbumExportServiceProvider.lua   locked export settings + processRenderedPhotos
-  HugoAlbumExportDialogSections.lua    the Export dialog section
-  HugoAlbumPluginInfoProvider.lua      the Plug-in Manager panel
-  HugoAlbumPrefs.lua                   settings and their defaults
-  HugoAlbumSlug.lua                    slug, transliteration, filename padding   (no SDK)
-  HugoAlbumFrontMatter.lua             front matter and YAML escaping            (no SDK)
-  HugoAlbumCoords.lua                  coordinate parsing                        (no SDK)
-  HugoAlbumMetadata.lua                catalog reads: date, GPS, cover
-  HugoAlbumRepo.lua                    site validation and the git wrapper
-  HugoAlbumLog.lua                     shared logger
+  HugoGalleryExportServiceProvider.lua   locked export settings + processRenderedPhotos
+  HugoGalleryExportDialogSections.lua    the Export dialog section
+  HugoGalleryPluginInfoProvider.lua      the Plug-in Manager panel
+  HugoGalleryPrefs.lua                   settings and their defaults
+  HugoGallerySlug.lua                    slug, transliteration, filename padding   (no SDK)
+  HugoGalleryFrontMatter.lua             front matter and YAML escaping            (no SDK)
+  HugoGalleryCoords.lua                  coordinate parsing                        (no SDK)
+  HugoGalleryMetadata.lua                catalog reads: date, GPS, cover
+  HugoGalleryRepo.lua                    site validation and the git wrapper
+  HugoGalleryLog.lua                     shared logger
 ```
 
 The three modules marked *no SDK* import nothing from Lightroom. That is deliberate: they are the
@@ -36,7 +36,7 @@ under inside Lightroom.
 
 What is left for Lightroom is the parts that need a real catalog and a real export session: the
 dialog's behaviour, and the rendition loop. The log is at
-`~/Library/Logs/Adobe/Lightroom/LrClassicLogs/HugoAlbum.log` — not in `~/Documents/`, which is
+`~/Library/Logs/Adobe/Lightroom/LrClassicLogs/HugoGallery.log` — not in `~/Documents/`, which is
 where older tutorials point and the usual reason `LrLogger` looks broken.
 
 ## Reloading
@@ -126,7 +126,7 @@ otherwise take the whole Export dialog down with it.
 
 ## Releasing
 
-Bump `VERSION` in `HugoAlbum.lrdevplugin/Info.lua` and push to main. The release workflow reads
+Bump `VERSION` in `HugoGalleryExportPlugin.lrdevplugin/Info.lua` and push to main. The release workflow reads
 that table — by evaluating the file, the way Lightroom does, rather than pattern-matching the
 source — and if the version has no tag yet it runs the suites, packages the plug-in folder and
 cuts the release with generated notes.
@@ -137,7 +137,7 @@ quietly rather than failing.
 
 ## Platforms
 
-Everything platform-specific sits in one block at the top of `HugoAlbumRepo.lua`, branching on the
+Everything platform-specific sits in one block at the top of `HugoGalleryRepo.lua`, branching on the
 SDK's `WIN_ENV` global: which git to run, whether to prepend a `PATH`, and how to quote. The
 Windows half is written but unverified — [docs/windows-port.md](docs/windows-port.md) covers what
 differs and what the **Test git** button proves.

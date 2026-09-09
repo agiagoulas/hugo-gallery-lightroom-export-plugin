@@ -12,9 +12,9 @@ local LrHttp    = import 'LrHttp'
 local LrTasks   = import 'LrTasks'
 local LrView    = import 'LrView'
 
-local Prefs = require 'HugoAlbumPrefs'
-local Repo  = require 'HugoAlbumRepo'
-local log   = require 'HugoAlbumLog'
+local Prefs = require 'HugoGalleryPrefs'
+local Repo  = require 'HugoGalleryRepo'
+local log   = require 'HugoGalleryLog'
 
 local PROJECT_URL = 'https://github.com/agiagoulas/hugo-gallery-lightroom-export-plugin'
 local THEME_URL   = 'https://github.com/nicokaiser/hugo-theme-gallery'
@@ -25,7 +25,7 @@ local OBSERVER_KEY = {}
 local Info = {}
 
 -- Repo.validatePaths stats the file system, which can yield, so it is never
--- called straight from an observer - see HugoAlbumExportDialogSections for the
+-- called straight from an observer - see HugoGalleryExportDialogSections for the
 -- longer version of why.
 local function refreshStatus( propertyTable )
 	-- Snapshot first. The field writes to prefs on every keystroke, so a dozen of

@@ -1,5 +1,5 @@
 --[[
-The "Hugo Album" section of the Export dialog: everything that ends up in the
+The "Hugo Gallery" section of the Export dialog: everything that ends up in the
 front matter, plus live validation and a preview of the filenames that will be
 written.
 ]]
@@ -10,13 +10,13 @@ local LrColor       = import 'LrColor'
 local LrTasks       = import 'LrTasks'
 local LrView        = import 'LrView'
 
-local Coords      = require 'HugoAlbumCoords'
-local FrontMatter = require 'HugoAlbumFrontMatter'
-local Metadata    = require 'HugoAlbumMetadata'
-local Prefs       = require 'HugoAlbumPrefs'
-local Repo        = require 'HugoAlbumRepo'
-local Slug        = require 'HugoAlbumSlug'
-local log         = require 'HugoAlbumLog'
+local Coords      = require 'HugoGalleryCoords'
+local FrontMatter = require 'HugoGalleryFrontMatter'
+local Metadata    = require 'HugoGalleryMetadata'
+local Prefs       = require 'HugoGalleryPrefs'
+local Repo        = require 'HugoGalleryRepo'
+local Slug        = require 'HugoGallerySlug'
+local log         = require 'HugoGalleryLog'
 
 local Sections = {}
 
@@ -423,7 +423,7 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 
 	return {
 		{
-			title = 'Hugo Album',
+			title = 'Hugo Gallery',
 			synopsis = bind 'slug',
 
 			-- Slug first, because it is the input. It names the folder, it is the
