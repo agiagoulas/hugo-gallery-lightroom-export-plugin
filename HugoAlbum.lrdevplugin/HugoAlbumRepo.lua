@@ -286,7 +286,7 @@ refusing.
 ]]
 function Repo.inspectAlbum( repoPath, slug )
 	local dir = Repo.albumDir( repoPath, slug )
-	local info = { count = 0, highest = 0, width = 0 }
+	local info = { count = 0, highest = 0, width = 0, indexExists = false }
 
 	if not LrFileUtils.exists( dir ) then return nil end
 
@@ -300,9 +300,17 @@ function Repo.inspectAlbum( repoPath, slug )
 		end
 	end
 
+	-- indexExists and index are deliberately separate. readFile returns nil on
+	-- failure, and a caller that cannot tell "no index.md" from "an index.md I
+	-- could not read" will happily render a fresh one over the second - which is
+	-- the captions, the ordering and the body gone.
 	local indexPath = LrPathUtils.child( dir, 'index.md' )
-	if LrFileUtils.exists( indexPath ) then
+	info.indexExists = LrFileUtils.exists( indexPath )
+	if info.indexExists then
 		info.index = LrFileUtils.readFile( indexPath )
+		if not info.index then
+			log:error( 'index.md exists but could not be read: ' .. indexPath )
+		end
 	end
 
 	return info

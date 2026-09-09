@@ -233,6 +233,97 @@ eq( values.lng, 12.3155, 'readValues: lng' )
 eq( values.description, 'A trip.', 'readValues: unquoted scalar' )
 eq( values.hasResources, false, 'readValues: reports a missing resources block' )
 
+
+-- Blocks the merge must not touch ----------------------------------------------
+--
+-- This is the failure the merge exists to prevent, and it used to be the one it
+-- caused: a folded scalar came back from readValues as ">" and merge replaced
+-- all three lines with `description: ">"`.
+
+local FOLDED = '---\ntitle: Old\ndescription: >\n  a long description that\n  runs over two lines.\n---\n'
+
+local foldedOut, foldedSkipped = FrontMatter.merge( FOLDED, {
+	title = 'New', description = 'typed in the dialog',
+} )
+eq( foldedOut:match( 'description: >\n  a long description that\n  runs over two lines.\n' ) ~= nil,
+	true, 'multi-line: a folded scalar survives byte for byte' )
+eq( foldedOut:match( '\ntitle: (.-)\n' ), '"New"', 'multi-line: single-line keys are still updated' )
+eq( table.concat( foldedSkipped, ',' ), 'description', 'multi-line: merge reports what it left alone' )
+
+local foldedValues = FrontMatter.readValues( FOLDED )
+eq( foldedValues.description, nil, 'multi-line: readValues hands the dialog nil, never ">"' )
+eq( foldedValues.unmanaged.description, true, 'multi-line: readValues names the unmanaged key' )
+eq( foldedValues.title, 'Old', 'multi-line: neighbouring single-line keys still read' )
+
+-- A block-scalar header with nothing under it: #lines is 1, so only the header
+-- pattern catches it.
+local bareHeader = FrontMatter.merge( '---\ndescription: >\n---\n', { description = 'x' } )
+eq( bareHeader:match( '\ndescription: (.-)\n' ), '>', 'multi-line: a bare > header is left alone' )
+eq( FrontMatter.merge( '---\ndescription: |-\n  kept\n---\n', { description = 'x' } )
+	:match( 'description: |%-\n  kept\n' ) ~= nil, true, 'multi-line: literal block with chomp' )
+
+-- List-form categories are a multi-line block like any other.
+local listCats = FrontMatter.merge( '---\ncategories:\n  - travel\n  - 2026\n---\n',
+	{ categories = { 'other' } } )
+eq( listCats:match( 'categories:\n  %- travel\n  %- 2026\n' ) ~= nil, true,
+	'multi-line: list-form categories survive' )
+
+eq( select( 2, FrontMatter.merge( '---\ndescription: one line\n---\n', { description = 'two' } ) )[ 1 ],
+	nil, 'multi-line: a single-line block is still replaced, and not reported as skipped' )
+
+-- Line endings ------------------------------------------------------------------
+--
+-- Stripping the \r instead of writing it back would rewrite every line in the
+-- file, turning an export into a whole-file diff on a Windows contributor's repo.
+
+local CRLF = '---\r\ntitle: T\r\ndescription: old\r\n---\r\n\r\nBody text.\r\n'
+eq( FrontMatter.parse( CRLF ) ~= nil, true, 'CRLF: parses at all' )
+local crlfOut = FrontMatter.merge( CRLF, { title = 'T', description = 'new' } )
+eq( select( 2, crlfOut:gsub( '[^\r]\n', '' ) ), 0, 'CRLF: no lone LF anywhere in the output' )
+eq( crlfOut:match( 'Body text.' ) ~= nil, true, 'CRLF: the body survives' )
+eq( crlfOut:match( 'description: (.-)\r' ), '"new"', 'CRLF: the value is still updated' )
+eq( FrontMatter.merge( '---\ntitle: T\n---\n', { title = 'T' } ):find( '\r' ), nil,
+	'CRLF: an LF file stays an LF file' )
+
+-- sort_by ------------------------------------------------------------------------
+
+eq( FrontMatter.merge( '---\ntitle: B\n---\n', { title = 'B' } ):match( 'sort_by: Name' ) ~= nil,
+	true, 'sort_by is added when absent - the filenames exist to be the running order' )
+
+-- Repeated top-level keys ---------------------------------------------------------
+
+local dup = FrontMatter.merge( '---\ntitle: A\ndescription: x\ntitle: B\n---\n', { title = 'C' } )
+eq( select( 2, dup:gsub( 'title:', '' ) ), 2, 'duplicate keys: still exactly two title lines out' )
+eq( dup:match( '\ntitle: (.-)\n' ), '"C"', 'duplicate keys: the first one is the one updated' )
+eq( dup:match( 'title: B' ) ~= nil, true, 'duplicate keys: the repeat is preserved where it was' )
+
+-- FrontMatter.plan ------------------------------------------------------------------
+--
+-- The decision that can destroy a hand-written file, table-driven.
+
+local function planOf( existing, album )
+	local action, contents = FrontMatter.plan( existing, album or { title = 'X', date = '2026-01-01' } )
+	return action, contents
+end
+
+eq( planOf( nil ), 'write', 'plan: no album yet -> render a fresh index.md' )
+eq( planOf { indexExists = false }, 'write', 'plan: folder without an index.md -> render one' )
+eq( planOf { indexExists = true, index = nil }, 'leave',
+	'plan: index.md exists but could not be read -> touch nothing' )
+eq( planOf { indexExists = true, index = 'no front matter here\n' }, 'leave',
+	'plan: unparseable index.md -> touch nothing' )
+eq( planOf { indexExists = true, index = '---\ntitle: Old\n---\n' }, 'merge',
+	'plan: a real index.md -> merge' )
+
+local _, planned = FrontMatter.plan( { indexExists = true, index = FOLDED }, { title = 'New' } )
+eq( planned:match( 'runs over two lines' ) ~= nil, true, 'plan: merge output carries the fix through' )
+
+local _, _, unreadableNotes = FrontMatter.plan( { indexExists = true, index = nil }, {} )
+eq( unreadableNotes[ 1 ]:match( 'could not be read' ) ~= nil, true, 'plan: says why it did nothing' )
+
+local _, _, skipNotes = FrontMatter.plan( { indexExists = true, index = FOLDED }, { title = 'N' } )
+eq( #skipNotes, 2, 'plan: a skipped block earns its own summary line' )
+
 --------------------------------------------------------------------------------
 
 io.write( '\n', failures == 0 and 'all tests passed\n' or ( failures .. ' FAILURES\n' ) )

@@ -208,6 +208,12 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	local resolved = Metadata.resolve( photos, settings, meta )
 	local album    = Metadata.merge( settings, resolved, numbering )
 
+	-- An existing album keeps its own cover. Without this, appending to one whose
+	-- index.md happens to have no resources block would quietly promote one of
+	-- the photos just added - the merge adds the block it finds missing, and the
+	-- cover rule only ever ran over the new photos.
+	if existing then album.cover = nil end
+
 	-- Git decisions up front, while nothing has been written yet.
 	local branchName, useExistingBranch = nil, false
 	if settings.doGit then
@@ -282,25 +288,15 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 	index.md last: an abort mid-render then leaves no half-valid page bundle even
 	if the cleanup handler somehow does not run.
 
-	For an album that already has one, the file is merged rather than rewritten -
-	the managed keys are updated in place and everything else is kept, because
-	that is where per-photo captions, manual ordering, featured/layout/menu and
-	any Markdown body live. A file that cannot be parsed is left completely
-	alone: the photos are still added, and the summary says so.
+	What happens to an existing one is decided by FrontMatter.plan, which is pure
+	and therefore testable - this is the decision that can destroy a hand-written
+	file, so it does not belong inline here.
 	]]
-	local indexPath = LrPathUtils.child( albumDir, 'index.md' )
-	local indexNote
-	if existing and existing.index then
-		local merged = FrontMatter.merge( existing.index, album )
-		if merged then
-			writeFile( indexPath, merged )
-			indexNote = 'index.md updated; captions, ordering and anything else it had were kept.'
-		else
-			indexNote = 'index.md was left untouched - it has no front matter this could merge into.'
-		end
-	else
-		writeFile( indexPath, FrontMatter.render( album ) )
+	local action, contents, indexNotes = FrontMatter.plan( existing, album )
+	if contents then
+		writeFile( LrPathUtils.child( albumDir, 'index.md' ), contents )
 	end
+	log:info( 'index.md: ' .. action )
 	succeeded = true
 
 	--------------------------------------------------------------------------
@@ -320,7 +316,7 @@ function provider.processRenderedPhotos( functionContext, exportContext )
 		summary[ #summary + 1 ] = string.format( '%d photos written to %s/',
 			written, Repo.albumRelPath( slug ) )
 	end
-	if indexNote then summary[ #summary + 1 ] = indexNote end
+	for _, note in ipairs( indexNotes ) do summary[ #summary + 1 ] = note end
 
 	-- In update mode the resources block is preserved, so the cover is whatever
 	-- the album already had.

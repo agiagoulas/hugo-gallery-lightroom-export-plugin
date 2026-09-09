@@ -119,33 +119,53 @@ end
 
 local function splitLines( text )
 	local out, pos = {}, 1
+	local sawCRLF = false
 	while pos <= #text do
 		local nl = text:find( '\n', pos, true )
+		local line
 		if nl then
-			out[ #out + 1 ] = text:sub( pos, nl - 1 )
+			line = text:sub( pos, nl - 1 )
 			pos = nl + 1
 		else
-			out[ #out + 1 ] = text:sub( pos )
+			line = text:sub( pos )
 			pos = #text + 1
 		end
+		if line:sub( -1 ) == '\r' then
+			sawCRLF = true
+			line = line:sub( 1, -2 )
+		end
+		out[ #out + 1 ] = line
 	end
-	return out
+	return out, sawCRLF and '\r\n' or '\n'
+end
+
+-- A block this module must not rewrite: it has continuation lines, or its value
+-- is a block-scalar header (`>`, `|`, `|-`, `>2` ...) with the content on the
+-- lines below. Reducing either to a single quoted line is exactly the data loss
+-- the merge exists to prevent - a folded three-line description would come back
+-- as `description: ">"`.
+local function isUnmanaged( lines )
+	if #lines > 1 then return true end
+	local value = lines[ 1 ]:match( '^[%w_%-]+:%s*(.-)%s*$' ) or ''
+	return value:match( '^[|>][%+%-]?%d*$' ) ~= nil
 end
 
 --[[
 Splits an index.md into ordered top-level blocks plus the body.
 
-	keys      top-level key names, in the order they appear
-	block     key -> the lines it owns, continuation lines included
-	preamble  anything before the first key (comments)
-	body      everything after the closing ---
+	keys       top-level key names, in the order they appear
+	block      key -> the lines it owns, continuation lines included
+	unmanaged  key -> true for blocks that must be preserved verbatim
+	preamble   anything before the first key (comments)
+	body       everything after the closing ---
+	eol        the file's line ending, so the merge can write it back unchanged
 
 Returns nil when the file has no front matter, which the caller must treat as
 "do not touch this file".
 ]]
 function FrontMatter.parse( text )
 	if type( text ) ~= 'string' then return nil end
-	local ls = splitLines( text )
+	local ls, eol = splitLines( text )
 	if ls[ 1 ] ~= '---' then return nil end
 
 	local closing
@@ -154,7 +174,7 @@ function FrontMatter.parse( text )
 	end
 	if not closing then return nil end
 
-	local parsed = { keys = {}, block = {}, preamble = {} }
+	local parsed = { keys = {}, block = {}, unmanaged = {}, preamble = {}, eol = eol }
 	local current
 	for i = 2, closing - 1 do
 		local line = ls[ i ]
@@ -163,6 +183,14 @@ function FrontMatter.parse( text )
 			current = key
 			parsed.keys[ #parsed.keys + 1 ] = key
 			parsed.block[ key ] = { line }
+		elseif key then
+			-- A repeat of a key already seen. Appending it to whatever block came
+			-- before would move it, and the merge would then emit both copies, so
+			-- it gets its own block that nothing will rewrite.
+			current = nil
+			parsed.keys[ #parsed.keys + 1 ] = line
+			parsed.block[ line ] = { line }
+			parsed.unmanaged[ line ] = true
 		elseif current then
 			table.insert( parsed.block[ current ], line )
 		else
@@ -170,8 +198,12 @@ function FrontMatter.parse( text )
 		end
 	end
 
-	local body = table.concat( ls, '\n', closing + 1 )
-	parsed.body = body ~= '' and ( body .. '\n' ) or ''
+	for key, lines in pairs( parsed.block ) do
+		if isUnmanaged( lines ) then parsed.unmanaged[ key ] = true end
+	end
+
+	local body = table.concat( ls, eol, closing + 1 )
+	parsed.body = body ~= '' and ( body .. eol ) or ''
 	return parsed
 end
 
@@ -182,15 +214,22 @@ local function unquote( value )
 	return ( inner:gsub( '\\"', '"' ):gsub( '\\\\', '\\' ) )
 end
 
--- Pulls the values the Export dialog owns back out of an existing album, so the
--- dialog can be prefilled with them instead of silently replacing them.
+--[[
+Pulls the values the Export dialog owns back out of an existing album, so the
+dialog can be prefilled with them instead of silently replacing them.
+
+A key whose block is unmanaged comes back as nil and is named in `unmanaged`.
+nil rather than the raw first line, because every consumer already treats a
+missing key as nil - and because handing the dialog `">"` to edit, as this once
+did, is how the block below it got destroyed.
+]]
 function FrontMatter.readValues( text )
 	local parsed = FrontMatter.parse( text )
 	if not parsed then return nil end
 
 	local function scalar( key )
 		local lines = parsed.block[ key ]
-		if not lines then return nil end
+		if not lines or parsed.unmanaged[ key ] then return nil end
 		return unquote( lines[ 1 ]:match( '^[%w_%-]+:%s*(.*)$' ) or '' )
 	end
 
@@ -201,6 +240,7 @@ function FrontMatter.readValues( text )
 		lat = tonumber( scalar( 'lat' ) ),
 		lng = tonumber( scalar( 'lng' ) ),
 		hasResources = parsed.block.resources ~= nil,
+		unmanaged = parsed.unmanaged,
 	}
 
 	local cats = scalar( 'categories' )
@@ -219,23 +259,27 @@ end
 --[[
 Rewrites an existing index.md with the album values, preserving everything else.
 
-Two rules make this safe to run over a hand-edited file:
+Three rules make this safe to run over a hand-edited file:
 
   * it never deletes. A key the dialog left empty keeps whatever the file had -
     clearing a field is an edit you make in the file, not a side effect of an
     export.
-  * `resources` and `sort_by` are never rewritten, only added when absent. That
-    is where per-photo captions, weights and manual ordering live.
+  * `resources` is never rewritten, only added when absent. That is where
+    per-photo captions and weights live. `sort_by` is likewise only ever added.
+  * a multi-line block is never touched at all, whatever key it belongs to.
 
-Returns nil if the file has no front matter to merge into.
+Returns the new text and a list of keys that were left alone despite being ones
+the dialog manages, so the caller can say so. nil if there is no front matter to
+merge into.
 ]]
 local MERGEABLE = { date = true, title = true, categories = true, lat = true, description = true }
+local ADD_IF_ABSENT = { sort_by = true, resources = true }
 
 function FrontMatter.merge( existingText, album )
 	local parsed = FrontMatter.parse( existingText )
 	if not parsed then return nil end
 
-	local out, written = {}, {}
+	local out, written, skipped = {}, {}, {}
 	for _, line in ipairs( parsed.preamble ) do out[ #out + 1 ] = line end
 
 	local function emit( lines )
@@ -245,21 +289,31 @@ function FrontMatter.merge( existingText, album )
 	-- Where a key added below should go. A new scalar belongs above the
 	-- resources list, not stranded after sixty lines of per-photo entries.
 	local insertAt
+	local latReplaced = false
 
 	for _, key in ipairs( parsed.keys ) do
 		if key == 'resources' and not insertAt then insertAt = #out + 1 end
-		-- lng has no block of its own: keyLines emits it together with lat.
-		if key == 'lng' and MERGEABLE.lat and keyLines( 'lat', album ) then
-			-- already emitted alongside lat
+
+		if key == 'lng' and latReplaced then
+			-- keyLines emits lng alongside lat, so this block is already out.
+			written[ key ] = true
 		else
-			local replacement = MERGEABLE[ key ] and keyLines( key, album ) or nil
+			local replacement
+			if MERGEABLE[ key ] then
+				if parsed.unmanaged[ key ] then
+					skipped[ #skipped + 1 ] = key
+				else
+					replacement = keyLines( key, album )
+				end
+			end
+			if key == 'lat' and replacement then latReplaced = true end
 			emit( replacement or parsed.block[ key ] )
+			written[ key ] = true
 		end
-		written[ key ] = true
 	end
 
 	for _, key in ipairs( CREATE_ORDER ) do
-		if not written[ key ] and ( MERGEABLE[ key ] or key == 'resources' ) then
+		if not written[ key ] and ( MERGEABLE[ key ] or ADD_IF_ABSENT[ key ] ) then
 			local rendered = keyLines( key, album )
 			if rendered then
 				if insertAt then
@@ -274,7 +328,49 @@ function FrontMatter.merge( existingText, album )
 		end
 	end
 
-	return '---\n' .. table.concat( out, '\n' ) .. '\n---\n' .. parsed.body
+	local eol = parsed.eol
+	return '---' .. eol .. table.concat( out, eol ) .. eol .. '---' .. eol .. parsed.body, skipped
+end
+
+--[[
+Decides what to do with an album's index.md, and says why.
+
+Pure on purpose: this is the decision that can destroy a hand-written file, and
+keeping it out of processRenderedPhotos is what makes it testable.
+
+	existing  nil for a new album, else Repo.inspectAlbum's return
+	returns   action ('write' | 'merge' | 'leave'), contents, notes
+]]
+function FrontMatter.plan( existing, album )
+	if not existing then
+		return 'write', FrontMatter.render( album ), {}
+	end
+
+	-- The file is there but could not be read. Rendering a fresh one would
+	-- silently replace captions, ordering and body with a four-line stub, which
+	-- is the single worst thing this module could do.
+	if existing.indexExists and not existing.index then
+		return 'leave', nil,
+			{ 'index.md could not be read, so it was left untouched - the photos were still added.' }
+	end
+
+	-- An album folder with no index.md at all: nothing to lose by writing one.
+	if not existing.index then
+		return 'write', FrontMatter.render( album ), {}
+	end
+
+	local merged, skipped = FrontMatter.merge( existing.index, album )
+	if not merged then
+		return 'leave', nil,
+			{ 'index.md was left untouched - it has no front matter this could merge into.' }
+	end
+
+	local notes = { 'index.md updated; captions, ordering and anything else it had were kept.' }
+	if #skipped > 0 then
+		notes[ #notes + 1 ] = 'Left exactly as they were, being multi-line blocks: '
+			.. table.concat( skipped, ', ' ) .. '.'
+	end
+	return 'merge', merged, notes
 end
 
 return FrontMatter
