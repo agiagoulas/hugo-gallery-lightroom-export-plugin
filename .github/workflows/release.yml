@@ -1,0 +1,65 @@
+# Cuts a release when the version in the manifest changes.
+#
+# Info.lua is the single source of truth: it is the version Lightroom shows in
+# the Plug-in Manager, so there is nothing to keep in sync and no way for a tag
+# to disagree with what a user sees. Bump VERSION, push to main, done.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write   # needed to create the tag and the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags, so an already-released version can be spotted
+
+      - run: sudo apt-get update && sudo apt-get install -y luajit
+
+      # Read it the way Lightroom does - Info.lua is a Lua table, so evaluating
+      # it beats pattern-matching the source and cannot drift from the format.
+      - id: version
+        run: |
+          v=$(luajit -e 'local i = dofile("HugoAlbum.lrdevplugin/Info.lua")
+            io.write(("%d.%d.%d"):format(i.VERSION.major, i.VERSION.minor, i.VERSION.revision))')
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          echo "Manifest version: v$v"
+
+      # Most pushes to main do not change the version. That is not a failure, so
+      # the job stops quietly rather than going red on every ordinary commit.
+      - id: check
+        run: |
+          if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Already released, nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A release must not ship code the suites have not seen, so they run here
+      # too rather than trusting the test workflow to have passed.
+      - if: steps.check.outputs.release == 'true'
+        run: make test
+
+      # The plug-in folder at the top level of the archive: unzip, then add it in
+      # the Plug-in Manager. GitHub's own source archives nest it one level down,
+      # which is exactly where people get stuck.
+      - if: steps.check.outputs.release == 'true'
+        run: |
+          zip -r "HugoAlbum-${{ steps.version.outputs.tag }}.zip" HugoAlbum.lrdevplugin \
+            -x '*.DS_Store'
+
+      - if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            "HugoAlbum-${{ steps.version.outputs.tag }}.zip" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes

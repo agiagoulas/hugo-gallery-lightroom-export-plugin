@@ -124,6 +124,17 @@ downstream works from that table. Two reasons it is worth keeping that way:
 There is a per-photo fallback if the batch call ever fails, because a single unsupported key would
 otherwise take the whole Export dialog down with it.
 
+## Releasing
+
+Bump `VERSION` in `HugoAlbum.lrdevplugin/Info.lua` and push to main. The release workflow reads
+that table — by evaluating the file, the way Lightroom does, rather than pattern-matching the
+source — and if the version has no tag yet it runs the suites, packages the plug-in folder and
+cuts the release with generated notes.
+
+The manifest is deliberately the only place a version lives: it is what the Plug-in Manager shows,
+so a tag cannot come to disagree with what a user sees. A push that does not change it finishes
+quietly rather than failing.
+
 ## Platforms
 
 Everything platform-specific sits in one block at the top of `HugoAlbumRepo.lua`, branching on the

@@ -26,8 +26,9 @@ button in the Plug-in Manager.
 
 ## Install
 
-1. Download the repository — *Code → Download ZIP*, or clone it. The plugin is the
-   `HugoAlbum.lrdevplugin` folder **inside** it, not the folder you downloaded.
+1. Download `HugoAlbum-vX.Y.Z.zip` from the [latest release][releases] and unzip it. It contains
+   the `HugoAlbum.lrdevplugin` folder ready to use. (Cloning works too — the plugin is then the
+   `HugoAlbum.lrdevplugin` folder **inside** the repository, not the folder you cloned.)
 2. **File → Plug-in Manager → Add**, select that `HugoAlbum.lrdevplugin` folder.
 3. In the same window, set **Site folder**. The panel tells you straight away whether it found a
    Hugo config, a git repo and your albums folder.
@@ -117,6 +118,8 @@ git command lines on both platforms, the preference clamping, and the locked exp
 parts that need the host — the Export dialog, the rendition loop — were exercised by hand in
 Lightroom Classic 15, and `docs/windows-port.md` is explicit that the Windows half has been run by
 nobody at all.
+
+[releases]: https://github.com/agiagoulas/hugo-gallery-lightroom-export-plugin/releases/latest
 
 ## Licence
 
