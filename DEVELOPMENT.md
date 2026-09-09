@@ -22,15 +22,20 @@ ones that could silently write a broken `index.md`, so they stay runnable — an
 the host.
 
 ```bash
-make test        # needs a Lua 5.1 interpreter: brew install luajit
+make test        # brew install luajit
 ```
 
-That runs two suites. `test-pure.lua` covers those three modules directly. `test-commands.lua`
-covers the git wrapper by stubbing the SDK and loading the real `HugoAlbumRepo`, so what it asserts
-is the exact string that would reach the shell — on both platforms. It is the only way to check the
-Windows quoting without a Windows machine.
+That runs two suites, ~190 assertions. `test-pure.lua` covers the three SDK-free modules directly,
+including the front-matter merge over hand-edited files. `test-commands.lua` stubs the SDK and
+loads the real modules, so what it asserts is what would actually happen: the git command lines on
+both platforms, `Repo.inspectAlbum`, the consent rule before appending, the batched metadata layer
+and the cover rules, `Prefs` clamping and folder normalisation, and `updateExportSettings`.
 
-Everything else has to be exercised in Lightroom. The log is at
+`luajit` specifically, not any Lua 5.1 — that is what the Makefile calls and what the plugin runs
+under inside Lightroom.
+
+What is left for Lightroom is the parts that need a real catalog and a real export session: the
+dialog's behaviour, and the rendition loop. The log is at
 `~/Library/Logs/Adobe/Lightroom/LrClassicLogs/HugoAlbum.log` — not in `~/Documents/`, which is
 where older tutorials point and the usual reason `LrLogger` looks broken.
 

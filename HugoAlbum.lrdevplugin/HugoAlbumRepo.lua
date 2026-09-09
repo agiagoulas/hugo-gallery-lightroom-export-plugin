@@ -147,7 +147,9 @@ local CONFIG_FILES = {
 	'hugo.toml', 'hugo.yaml', 'hugo.yml', 'hugo.json',
 	'config.toml', 'config.yaml', 'config.yml', 'config.json',
 	'config/_default/hugo.toml', 'config/_default/hugo.yaml',
+	'config/_default/hugo.yml', 'config/_default/hugo.json',
 	'config/_default/config.toml', 'config/_default/config.yaml',
+	'config/_default/config.yml', 'config/_default/config.json',
 }
 
 function Repo.looksLikeHugoSite( repoPath )

@@ -19,15 +19,19 @@ a terminal — the most it will do is create a branch and commit.
 
 Lightroom Classic, and a Hugo site using hugo-theme-gallery's album layout, in a git working copy.
 
-Developed and used on macOS. Windows support exists but has never been run by anyone — see
-[docs/windows-port.md](docs/windows-port.md), and the **Test git** button in the Plug-in Manager.
+Developed and used on macOS with Lightroom Classic 15. It should work further back — nothing here
+is new SDK — but that is the only version it has actually run on. Windows support exists and has
+never been run by anyone: see [docs/windows-port.md](docs/windows-port.md) and the **Test git**
+button in the Plug-in Manager.
 
 ## Install
 
-1. **File → Plug-in Manager → Add**, select `HugoAlbum.lrdevplugin`.
-2. In the same window, set **Site folder**. The panel tells you straight away whether it found a
+1. Download the repository — *Code → Download ZIP*, or clone it. The plugin is the
+   `HugoAlbum.lrdevplugin` folder **inside** it, not the folder you downloaded.
+2. **File → Plug-in Manager → Add**, select that `HugoAlbum.lrdevplugin` folder.
+3. In the same window, set **Site folder**. The panel tells you straight away whether it found a
    Hugo config, a git repo and your albums folder.
-3. Select photos → **File → Export** → *Export To: Hugo Album*.
+4. Select photos → **File → Export** → *Export To: Hugo Album*.
 
 Everything in the Plug-in Manager is set once per machine; the Export dialog only asks for what
 differs album to album.
@@ -36,7 +40,7 @@ differs album to album.
 
 | | |
 |---|---|
-| **Site folder** | Your site's working copy. Needs a Hugo config — any name Hugo accepts — and a `.git`. |
+| **Site folder** | Your site's working copy. Needs a `.git` and a Hugo config under one of the standard names (`hugo.toml`, `config.yaml`, `config/_default/…` and the rest). |
 | **Albums in** | Where album bundles live, relative, forward slashes. `content`, or `content/albums` if they are grouped in a section. |
 | **Long edge / Quality** | 2048px and 92 by default. The theme never serves above 1600px, so 2048 is invisible on the page while leaving headroom — and small enough that photos can live in git. |
 | **Write lat/lng** | Off by default. These are **not** theme keys; they only matter if your site has its own map layout. Turning it on adds a Location field to the Export dialog. |

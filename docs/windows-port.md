@@ -16,7 +16,7 @@ top of that file:
 
 | | macOS | Windows |
 |---|---|---|
-| git | `/usr/bin/git` — Lightroom from Finder has a minimal environment | bare `git`, since the installer puts it on the system PATH; falls back to probing `C:\Program Files\Git\cmd\git.exe` |
+| git | `/usr/bin/git` — Lightroom from Finder has a minimal environment | probes `C:\Program Files\Git\cmd\git.exe` and the `(x86)` variant, then falls back to a bare `git`, which the installer normally puts on the system PATH |
 | `PATH` prefix | prepended so the repo's own hooks find Homebrew tools | omitted — it is sh syntax, and cmd.exe would read it as a program name |
 | Quoting | POSIX single quotes, `'` escaped as `'\''` | double quotes; a path containing `"` is refused rather than mangled, because cmd.exe cannot escape one |
 
