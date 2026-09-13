@@ -5,6 +5,8 @@ A Lightroom Classic export plugin for [Hugo](https://gohugo.io) sites built on
 title, export — you get a finished album folder with correctly sized JPEGs and a ready-made
 `index.md`.
 
+![alt text](./docs/export-dialog.png)
+
 ```
 Export → Hugo Gallery              content/venice/
   Title: Venice              →     venice-01.jpg … venice-42.jpg
@@ -106,18 +108,11 @@ file had rather than removing the key. To remove a key, edit the file.
 ## Development
 
 Layout, tests, and the SDK behaviours worth knowing before changing anything:
-[DEVELOPMENT.md](DEVELOPMENT.md).
+[DEVELOPMENT.md](./docs/DEVELOPMENT.md).
 
 ## Written with AI assistance
 
 Most of this was written by Claude in conversation with me, and reviewed by me before it landed.
-
-What could be checked without Lightroom is checked: two suites, ~200 assertions, covering the
-front-matter merge over hand-edited files, slug and filename generation, coordinate parsing, the
-git command lines on both platforms, the preference clamping, and the locked export settings. The
-parts that need the host — the Export dialog, the rendition loop — were exercised by hand in
-Lightroom Classic 15, and `docs/windows-port.md` is explicit that the Windows half has been run by
-nobody at all.
 
 [releases]: https://github.com/agiagoulas/hugo-gallery-lightroom-export-plugin/releases/latest
 

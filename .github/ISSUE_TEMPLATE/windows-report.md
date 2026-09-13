@@ -1,6 +1,6 @@
 ---
 name: Windows report
-about: Tell us whether the experimental Windows support works
+about: Tell me whether the experimental Windows support works
 labels: windows
 ---
 
