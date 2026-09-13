@@ -1,14 +1,3 @@
---[[
-Checks the git command lines HugoGalleryRepo builds, on both platforms.
-
-This is the one part of the plugin that cannot be exercised any other way: it
-leaves the SDK, and the Windows half has never run on Windows. So the SDK is
-stubbed out and the REAL module is loaded - what is asserted here is the string
-that would actually be handed to the shell, not a re-implementation of it.
-
-	luajit test-commands.lua
-]]
-
 package.path = './HugoGalleryExportPlugin.lrdevplugin/?.lua;' .. package.path
 
 local failures = 0
@@ -20,9 +9,6 @@ local function eq( got, want, label )
 		io.write( 'ok   ', label, '\n' )
 	end
 end
-
---------------------------------------------------------------------------------
--- Minimal SDK stubs. Only what HugoGalleryRepo and its requires actually touch.
 
 local executed, sep, tempDir, existing
 
@@ -51,7 +37,6 @@ function import( name )
 	return stubs[ name ] or error( 'unstubbed import: ' .. name )
 end
 
--- IS_WIN is decided when the module loads, so each platform needs a fresh one.
 local function loadRepo( isWindows )
 	WIN_ENV = isWindows or nil
 	for _, m in ipairs { 'HugoGalleryRepo', 'HugoGalleryPrefs', 'HugoGalleryLog', 'HugoGalleryCoords', 'HugoGallerySlug' } do
@@ -59,9 +44,6 @@ local function loadRepo( isWindows )
 	end
 	return require 'HugoGalleryRepo'
 end
-
---------------------------------------------------------------------------------
--- macOS
 
 sep, tempDir, existing = '/', '/tmp', {}
 math.randomseed( 1 ) ; local Repo = loadRepo( false )
@@ -79,9 +61,6 @@ eq( executed:match( "'%-C'" ), nil, 'macOS: no -C when no path is given' )
 Repo.git( "/Users/me/it's", { 'status' } )
 eq( executed:match( "'/Users/me/it'\\''s'" ) ~= nil, true, 'macOS: apostrophe in a path is escaped' )
 
---------------------------------------------------------------------------------
--- Windows
-
 sep, tempDir, existing = '\\', 'C:\\Temp', { ['C:\\Program Files\\Git\\cmd\\git.exe'] = true }
 Repo = loadRepo( true )
 
@@ -93,8 +72,6 @@ eq( executed:match( '^"(.-) > ' ),
 	'Windows: probed git.exe, double quotes, no PATH prefix' )
 eq( executed:match( 'PATH=' ), nil, 'Windows: the sh-only PATH prefix is omitted' )
 
--- Falls back to the bare name when the probe finds nothing, since the installer
--- puts git on the system PATH.
 existing = {}
 Repo = loadRepo( true )
 Repo.git( nil, { '--version' } )
@@ -102,12 +79,6 @@ eq( executed:match( '^""(.-)"' ), 'git', 'Windows: falls back to bare git' )
 
 local ok, err = pcall( Repo.git, 'C:\\bad"path', { 'status' } )
 eq( ok, false, 'Windows: a path containing a double quote is refused, not mangled' )
-
-
---------------------------------------------------------------------------------
--- Reading an album that already exists. Filename parsing and "where does the
--- next photo start" decide whether an append collides with what is there, so it
--- is worth checking against the real module rather than by eye.
 
 sep, tempDir = '/', '/tmp'
 existing = {
@@ -141,12 +112,6 @@ eq( info.index ~= nil, true, 'inspect: reads index.md' )
 existing = {}
 eq( Repo.inspectAlbum( '/site', 'nothing-here' ), nil, 'inspect: nil when the album is not there' )
 
-
---------------------------------------------------------------------------------
--- Consent before appending. Typing "Dolomites New" passes through the exact slug
--- "dolomites" on the way, so an album that already exists must never be written
--- to just because the name momentarily matched.
-
 existing = {
 	['/site/.git'] = true,
 	['/site/hugo.toml'] = true,
@@ -174,12 +139,6 @@ eq( Repo.validate( settings() ), nil, 'consent: irrelevant when the album is new
 existing[ '/site/content/venice' ] = true
 eq( Repo.validate( settings { albumTitle = '' } ), 'Enter an album title.',
 	'consent: a missing title outranks the exists check' )
-
-
---------------------------------------------------------------------------------
--- The metadata layer. It was rewritten to read the catalog once per selection
--- instead of per photo - and, in the sort comparator, per comparison - so it is
--- worth proving the values still arrive where they are used.
 
 local batchCalls, batchKeys = 0, nil
 local function photo( name, fields )
@@ -234,7 +193,6 @@ eq( resolved.lat, 45.4408, 'resolve: GPS from the first photo that has it' )
 eq( resolved.coverIndex, 2, 'resolve: highest rating wins, in sequence order' )
 eq( resolved.coverCount, 1, 'resolve: one clear winner' )
 
--- If the batch call is unavailable the dialog must still work, not die.
 stubs.LrApplication = { activeCatalog = function()
 	return { batchGetRawMetadata = function() error( 'nope' ) end }
 end }
@@ -245,10 +203,6 @@ eq( fallback[ earlier ].path, '/photos/a.jpg', 'metadata: falls back to per-phot
 eq( Metadata.resolve( shot, { coverRule = 'first' }, fallback ).date, '2026-05-02',
 	'metadata: the fallback carries the same values' )
 
--- The batch call fails wholesale on one bad key, and the fallback then reads the
--- same keys one by one. If it does not tolerate the bad one it dies of the very
--- cause it exists to survive - which is exactly how "Unknown key: fileName" took
--- the whole Export dialog down.
 local hostile = photo( 'h.jpg', { path = '/photos/h.jpg', rating = 4 } )
 hostile.getRawMetadata = function( self, key )
 	if key == 'rating' then error( 'Unknown key: "rating"' ) end
@@ -257,12 +211,6 @@ end
 local survived = Metadata.read { hostile }
 eq( survived[ hostile ].path, '/photos/h.jpg', 'metadata: a rejected key costs only that field' )
 eq( survived[ hostile ].rating, nil, 'metadata: ... and the rejected one is simply absent' )
-
-
---------------------------------------------------------------------------------
--- Preferences that reach the filesystem and git. albumsFolder is free text and
--- decides where albums are written; the numeric fields go straight into the
--- export API.
 
 package.loaded[ 'HugoGalleryPrefs' ] = nil
 package.loaded[ 'HugoGalleryRepo' ] = nil
@@ -307,10 +255,6 @@ eq( number( 'jpegQuality', '0' ), 1, 'clamp: lower bound' )
 eq( number( 'jpegQuality', '92' ), 92, 'clamp: a sane value is untouched' )
 prefsTable.shortEdge, prefsTable.jpegQuality = 1365, 92
 
---------------------------------------------------------------------------------
--- Committing only the album. The dialog promises that nothing else of the
--- user's gets committed; without the pathspec on the commit that is false.
-
 local commands = {}
 local realExecute = stubs.LrTasks.execute
 stubs.LrTasks.execute = function( cmd ) commands[ #commands + 1 ] = cmd ; return realExecute( cmd ) end
@@ -323,12 +267,6 @@ eq( commands[ 2 ]:match( "git' (.-) > " ),
 	"-C '/site' 'commit' '-m' 'Add Venice' '--' 'content/venice'",
 	'commit: and so is the commit, so nothing already staged rides along' )
 stubs.LrTasks.execute = realExecute
-
-
---------------------------------------------------------------------------------
--- The locked export settings. A plain function over a plain table, and the two
--- values in it that would ruin every photo in an album without ever looking like
--- an error: the cap has to be on the short edge, and quality is a 0..1 fraction.
 
 stubs.LrColor = function() return {} end
 stubs.LrHttp = { openUrlInBrowser = function() end }
@@ -361,9 +299,6 @@ provider.updateExportSettings( clamped )
 eq( clamped.LR_size_maxHeight, 900, 'export: a sane custom short edge is honoured' )
 eq( clamped.LR_jpeg_quality, 1, 'export: an absurd quality is clamped before the division' )
 prefsTable.shortEdge, prefsTable.jpegQuality = 1365, 92
-
---------------------------------------------------------------------------------
--- The cover rules that had no coverage: label, flag, ties and position.
 
 package.loaded[ 'HugoGalleryMetadata' ] = nil
 stubs.LrApplication = { activeCatalog = function()
@@ -398,16 +333,11 @@ eq( cover { coverRule = 'position', coverPosition = 2 }, '2/1', 'cover: an expli
 eq( cover { coverRule = 'position', coverPosition = 9 }, 'nil/0', 'cover: out of range leaves it unset' )
 eq( cover { coverRule = 'position', coverPosition = 'x' }, 'nil/0', 'cover: not a number' )
 
--- Appending: the cover filename must carry the offset, or it names a photo from
--- the wrong end of the album.
 local appended = Metadata.merge(
 	{ slug = 'venice', albumTitle = 'V', albumDate = '2026-01-01', location = '', categories = '' },
 	{ coverIndex = 2, coverCount = 1, date = '2026-01-01' },
 	{ offset = 42, width = 2 } )
 eq( appended.cover, 'venice-44.jpg', 'cover: an appended batch names the file it actually wrote' )
-
---------------------------------------------------------------------------------
--- validateFields' date and coordinate branches.
 
 prefsTable.writeCoordinates = true
 package.loaded[ 'HugoGalleryRepo' ] = nil
@@ -435,8 +365,6 @@ eq( fields { location = 'Venice' } ~= nil, true, 'fields: a place name is refuse
 prefsTable.writeCoordinates = false
 eq( fields { location = 'Venice' }, nil,
 	'fields: with coordinates off, a stale value cannot dim Export over a hidden field' )
-
---------------------------------------------------------------------------------
 
 io.write( '\n', failures == 0 and 'all command tests passed\n' or ( failures .. ' FAILURES\n' ) )
 os.exit( failures == 0 and 0 or 1 )

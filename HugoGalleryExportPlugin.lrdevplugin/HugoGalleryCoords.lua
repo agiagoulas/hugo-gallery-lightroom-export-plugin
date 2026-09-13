@@ -1,18 +1,11 @@
 --[[
-Parses coordinates out of whatever the user has in the clipboard.
-
-Most photos carry no GPS, so the coordinates usually get typed or pasted by
-hand, in whichever notation they were copied from:
-
+Parses coordinates in different formats.
 	45.4408, 12.3155
 	45.4408 12.3155
 	46°32'25.8"N 12°08'08.5"E
-
-Pure Lua on purpose (see HugoGallerySlug.lua for why).
 ]]
 
 local Coords = {}
-
 local NUM = '(-?%d+%.?%d*)'
 
 local function inRange( lat, lng )
@@ -21,8 +14,6 @@ local function inRange( lat, lng )
 	return lat, lng
 end
 
--- One "46 32 25.8" chunk plus its hemisphere letter. Missing minutes and
--- seconds are fine: "46°N" and "46°32'N" both work.
 local function dmsChunk( chunk, hemisphere )
 	local nums = {}
 	for n in chunk:gmatch( '%d+%.?%d*' ) do nums[ #nums + 1 ] = tonumber( n ) end
@@ -34,8 +25,6 @@ local function dmsChunk( chunk, hemisphere )
 	return value, hemisphere
 end
 
--- Requires the N/S/E/W letters, which is what makes this unambiguous enough to
--- try before the plain-number forms.
 local function parseDMS( text )
 	local t = text:gsub( '°', ' ' ):gsub( '′', "'" ):gsub( '″', '"' )
 	local lat, lng
@@ -56,7 +45,6 @@ local function parsePair( text )
 	if a and b then return tonumber( a ), tonumber( b ) end
 end
 
--- Returns lat, lng, or nil when nothing usable is in there.
 function Coords.parse( text )
 	if type( text ) ~= 'string' or text:match( '^%s*$' ) then return nil end
 
@@ -66,14 +54,11 @@ function Coords.parse( text )
 	return inRange( lat, lng )
 end
 
--- Four decimals, matching the existing albums (~11m, plenty for a map pin).
 function Coords.format( lat, lng )
 	if not lat or not lng then return '' end
 	return string.format( '%.4f, %.4f', lat, lng )
 end
 
--- A pin to eyeball before committing. OpenStreetMap needs no API key and no
--- account, unlike the Google and Apple equivalents.
 function Coords.mapUrl( lat, lng )
 	return string.format( 'https://www.openstreetmap.org/?mlat=%.5f&mlon=%.5f#map=13/%.5f/%.5f',
 		lat, lng, lat, lng )

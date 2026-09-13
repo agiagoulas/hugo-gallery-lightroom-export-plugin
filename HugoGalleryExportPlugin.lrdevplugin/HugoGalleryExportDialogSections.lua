@@ -1,9 +1,3 @@
---[[
-The "Hugo Gallery" section of the Export dialog: everything that ends up in the
-front matter, plus live validation and a preview of the filenames that will be
-written.
-]]
-
 local LrApplication = import 'LrApplication'
 local LrHttp        = import 'LrHttp'
 local LrColor       = import 'LrColor'
@@ -20,20 +14,9 @@ local log         = require 'HugoGalleryLog'
 
 local Sections = {}
 
--- Dialog-lifetime scratch state. Not on the property table: it holds LrPhoto
--- objects and a resolved-metadata cache, neither of which belongs in a saved
--- export preset. Only one export dialog exists at a time in practice.
--- `autoFilled` records what the last auto-fill wrote, so a later recompute can
--- tell an untouched field from one the user typed into and leave the latter be.
 local state = {
 	photos = {}, ordered = {}, resolved = nil, autoFilled = {},
-	-- The catalog, read once when the selection is loaded. Changing the cover
-	-- rule or the order then costs no catalog access at all.
 	meta = {},
-	-- Cached result of Repo.validatePaths. The file system can only be touched
-	-- from a task, but LR_cantExportBecause has to be recomputed synchronously
-	-- on every keystroke, so the IO half is cached here and refreshed whenever
-	-- the repo path or the slug changes.
 	repoProblem = 'Checking the site folder...',
 	albumExists = false,
 }
@@ -55,17 +38,8 @@ Sections.exportPresetFields = {
 	{ key = 'branchManual', default = false },
 }
 
---------------------------------------------------------------------------------
-
--- Writes an auto-filled value only into a field the user has not edited: blank,
--- or still holding whatever the previous auto-fill put there.
 local function prefill( propertyTable, key, value )
-	-- nil means "no suggestion", which is not the same as "make it empty". Passing
-	-- nil used to blank the field, so unticking the append box - or a keystroke
-	-- that changed the slug - wiped the date and dimmed Export with
-	-- "Date must be YYYY-MM-DD" and no way back.
 	if value == nil then return end
-
 	local current = propertyTable[ key ]
 	if current == '' or current == state.autoFilled[ key ] then
 		propertyTable[ key ] = value
@@ -73,17 +47,10 @@ local function prefill( propertyTable, key, value )
 	end
 end
 
--- Re-reads the catalog. Only called when the selection or a photo-dependent
--- setting changes, not on every keystroke.
 local function recomputeFromPhotos( propertyTable )
 	state.ordered = Metadata.sortPhotos( state.photos, propertyTable.sequenceBy, state.meta )
 	state.resolved = Metadata.resolve( state.ordered, propertyTable, state.meta )
-
-	-- The dates the selection actually spans, newest last, plus today. There is
-	-- no calendar widget in LrView, and for this job a menu of the real shoot
-	-- dates beats one anyway - it is almost always one of them.
 	propertyTable.dateChoices = state.resolved.dates
-
 	prefill( propertyTable, 'albumDate', state.resolved.date )
 	prefill( propertyTable, 'location',
 		Coords.format( state.resolved.lat, state.resolved.lng ) )
@@ -105,8 +72,6 @@ local function previewText( propertyTable )
 	local lines = {
 		string.format( '%d photos: %s ... %s', n,
 			Slug.fileName( slug, 1, numbering ), Slug.fileName( slug, n, numbering ) ),
-		-- The repo is set in the Plug-in Manager and not shown above, so name
-		-- the destination here rather than leaving it to be assumed.
 		'Into ' .. ( repoPath ~= '' and ( repoPath .. '/' .. Repo.albumRelPath( slug ) .. '/' ) or '?' ),
 	}
 
@@ -122,8 +87,6 @@ local function previewText( propertyTable )
 				.. ' the filenames need another digit, which breaks sort_by: Name.'
 		end
 
-		-- Naming them here is the difference between "your description was
-		-- ignored" and "the plugin ate my description".
 		local unmanaged = existing.values and existing.values.unmanaged
 		if propertyTable.updateExisting and unmanaged then
 			local names = {}
@@ -138,9 +101,6 @@ local function previewText( propertyTable )
 
 	local r = state.resolved
 	if propertyTable.updateExisting and existing then
-		-- The cover rule only ever runs over the photos being added, so applying
-		-- it to an album that already has one would promote a newcomer. An
-		-- existing album keeps whatever cover it has; change it in the file.
 		lines[ #lines + 1 ] = 'Cover: unchanged - an existing album keeps its own.'
 	elseif r then
 		if r.coverIndex then
@@ -167,32 +127,18 @@ local function previewText( propertyTable )
 	return table.concat( lines, '\n' )
 end
 
--- Observers can set the very keys they watch (slug follows the title), so guard
--- against re-entering while a pass is in flight.
 local updating = false
 
--- Synchronous and catalog-free: safe to call straight from an observer.
 local function update( propertyTable )
 	if updating then return end
 	updating = true
 
-	-- The slug is what the dialog asks for: it identifies the album, it is what an
-	-- existing one is found by, and it cannot then wander off under the album
-	-- while the title is being edited. The title is offered from it through
-	-- prefill, so it follows along until you type your own and then stops.
 	prefill( propertyTable, 'albumTitle', Slug.titleFromSlug( propertyTable.slug ) )
 
 	if not propertyTable.branchManual then
 		propertyTable.branchName = propertyTable.slug ~= '' and ( 'album/' .. propertyTable.slug ) or ''
 	end
 
-	-- The documented way to block an export: Lightroom dims the Export button
-	-- and shows this string under it. nil re-enables.
-	--
-	-- Display order: a bad repo path outranks a missing slug, and an existing
-	-- album folder only means anything once the slug is valid.
-	-- Appending to an album that is already there is never something to arrive at
-	-- by accident, so it stays blocked until the box is ticked for that album.
 	propertyTable.albumExists = state.albumExists == true
 	propertyTable.LR_cantExportBecause = state.repoProblem
 		or Repo.validateFields( propertyTable )
@@ -209,15 +155,6 @@ local function update( propertyTable )
 	updating = false
 end
 
---[[
-Reading the catalog can yield, and neither startDialog nor a property observer
-is allowed to: an observer runs inside the property table's assignment
-metamethod, and Lua 5.1 cannot yield across a C boundary at all. Doing the work
-in a task is the only way to touch the catalog from here.
-
-This is what "Yielding is not allowed within a C or metamethod call" means when
-it comes out of the Export dialog.
-]]
 local function refresh( propertyTable )
 	LrTasks.startAsyncTask( function()
 		recomputeFromPhotos( propertyTable )
@@ -225,26 +162,11 @@ local function refresh( propertyTable )
 	end )
 end
 
--- Same reason: Repo.validatePaths stats the file system.
---[[
-Copies an existing album's metadata into the dialog, or takes it back out again.
-
-Only ever runs on an explicit tick of "Add to the existing album". Doing it
-automatically was wrong: typing "Dolomites New" passes through the exact slug
-"dolomites" on the way, and the dialog would quietly absorb that album's date,
-description and categories into what is meant to be a new one.
-
-The title is never copied. The album is found BY the slug and the slug derives
-from the title, so writing the file's title back into the field could point at a
-different album and oscillate. The typed title wins, which is also how an album
-is retitled; the preview names the current one so the change stays visible.
-]]
 local function applyExistingValues( propertyTable )
 	local values = propertyTable.updateExisting and state.existing and state.existing.values
 	local resolved = state.resolved
 
 	if values then
-		-- An existing album's own title beats one generated from the slug.
 		prefill( propertyTable, 'albumTitle', values.title )
 		prefill( propertyTable, 'albumDate', values.date )
 		prefill( propertyTable, 'description', values.description )
@@ -253,8 +175,6 @@ local function applyExistingValues( propertyTable )
 			prefill( propertyTable, 'location', Coords.format( values.lat, values.lng ) )
 		end
 	else
-		-- Back to what the photos and the slug themselves say, not to empty. Only
-		-- fields the user has not touched move; that is what prefill guarantees.
 		prefill( propertyTable, 'albumTitle', Slug.titleFromSlug( propertyTable.slug ) )
 		prefill( propertyTable, 'albumDate', resolved and resolved.date )
 		if resolved and resolved.lat then
@@ -264,14 +184,11 @@ local function applyExistingValues( propertyTable )
 end
 
 local function refreshPaths( propertyTable )
-	-- The slug this run is about. Everything below works from the snapshot, never
-	-- from the live property, because the user goes on typing while it runs.
 	local wanted = propertyTable.slug
 	local snapshot = { slug = wanted }
 
 	LrTasks.startAsyncTask( function()
 		local problem, exists = Repo.validatePaths( snapshot )
-
 		local existing
 		if exists then
 			existing = Repo.inspectAlbum( Repo.configuredPath(), wanted )
@@ -280,10 +197,6 @@ local function refreshPaths( propertyTable )
 			end
 		end
 
-		-- Another keystroke may have landed while the file system was being read.
-		-- Its own task owns the state now; finishing this one would leave the
-		-- dialog describing an album the user has already typed past - including
-		-- a photo count that would start the numbering in the wrong place.
 		if propertyTable.slug ~= wanted then return end
 
 		state.repoProblem, state.albumExists, state.existing = problem, exists, existing
@@ -294,42 +207,28 @@ end
 --------------------------------------------------------------------------------
 
 function Sections.startDialog( propertyTable )
-	-- Per-album fields are cleared so the previous export's title can never be
-	-- carried silently into the next one. Categories survive: "travel" is
-	-- usually the same album to album.
 	propertyTable.albumTitle = ''
 	propertyTable.slug = ''
 	propertyTable.description = ''
 	propertyTable.branchManual = false
 	propertyTable.previewText = ''
-
-	-- Cleared before the first prefill: values carried over in the export preset
-	-- describe the previous album, so they must not be mistaken for edits to
-	-- this one.
 	propertyTable.albumDate, propertyTable.location = '', ''
 	propertyTable.hasLocation, propertyTable.locationEcho = false, ''
 	propertyTable.updateExisting, propertyTable.albumExists = false, false
 	state.autoFilled = {}
-
-	propertyTable.dateChoices = {}   -- filled once the catalog has been read
-
-	-- `state` outlives a single dialog, so reset the cached verdict too: a stale
-	-- "repo is fine" from last time would briefly enable the Export button.
+	propertyTable.dateChoices = {}
 	state.photos, state.ordered, state.resolved, state.meta = {}, {}, nil, {}
 	state.existing = nil
 	state.repoProblem, state.albumExists = 'Checking the repo...', false
 
-	update( propertyTable )   -- valid state immediately; the preview fills in below
+	update( propertyTable )
 
 	for _, key in ipairs { 'albumTitle', 'branchName', 'albumDate', 'location',
 		'branchManual' } do
 		propertyTable:addObserver( key, function() update( propertyTable ) end )
 	end
-	-- The slug decides where the album would land, so it needs the file-system
-	-- checks redone. The repo itself is fixed for the session - it is set in the
-	-- Plug-in Manager, not here.
+
 	propertyTable:addObserver( 'slug', function()
-		-- Consent is per album: a different slug is a different decision.
 		propertyTable.updateExisting = false
 		refreshPaths( propertyTable )
 	end )
@@ -342,12 +241,6 @@ function Sections.startDialog( propertyTable )
 		propertyTable:addObserver( key, function() refresh( propertyTable ) end )
 	end
 
-	-- getTargetPhotos() is the catalog's target set at dialog time. Normally
-	-- identical to what gets exported, but it is only used for the preview -
-	-- processRenderedPhotos recomputes everything authoritatively.
-	--
-	-- Note the LrTasks.pcall: plain pcall is a C call, and a yield inside one is
-	-- exactly the error this whole arrangement exists to avoid.
 	LrTasks.startAsyncTask( function()
 		local ok, photos = LrTasks.pcall( function()
 			return LrApplication.activeCatalog():getTargetPhotos()
@@ -369,12 +262,6 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 	local bind = LrView.bind
 	local share = LrView.share
 
-	-- lat/lng are not part of hugo-theme-gallery, so the whole row only exists
-	-- on a site that has said it has a map layout reading them. Built as a
-	-- conditional rather than bound to `visible`: that property is not bindable,
-	-- and layout containers like f:row do not accept it at all. Deciding here is
-	-- enough, since the setting lives in the Plug-in Manager and cannot change
-	-- while this dialog is open.
 	local locationRows = f:spacer { height = 0 }
 	if Prefs.get( 'writeCoordinates' ) then
 		locationRows = f:column {
@@ -398,9 +285,6 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 					end,
 				},
 			},
-			-- The echo is a reading of what was typed, not another field, so it
-			-- wants a little air on both sides: enough to sit apart from the
-			-- input above, and not to butt against whatever follows.
 			f:spacer { height = 4 },
 			f:row {
 				f:static_text { title = '', width = share 'label_width' },
@@ -426,10 +310,6 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 			title = 'Hugo Gallery',
 			synopsis = bind 'slug',
 
-			-- Slug first, because it is the input. It names the folder, it is the
-			-- stem of every filename, and it is what an existing album is found
-			-- by - so it is the one thing that cannot be derived from something
-			-- else. The title follows from it and is free to edit.
 			f:row {
 				f:static_text { title = 'Slug:', alignment = 'right', width = share 'label_width' },
 				f:edit_field {
@@ -512,7 +392,6 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 						{ title = 'Photo number', value = 'position' },
 					},
 				},
-				-- Each rule's own control sits next to it, live only for that rule.
 				f:popup_menu {
 					value = bind 'coverLabel',
 					enabled = bind { key = 'coverRule', transform = function( v ) return v == 'label' end },
@@ -550,8 +429,6 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 				f:static_text { title = 'Branch:', alignment = 'right', width = share 'label_width' },
 				f:edit_field {
 					value = bind 'branchName',
-					-- Editable only when both the git step is on and the user has
-					-- taken the name off auto.
 					enabled = bind {
 						keys = { 'doGit', 'branchManual' },
 						operation = function( _, values )
@@ -585,10 +462,6 @@ function Sections.sectionsForTopOfDialog( f, propertyTable )
 				f:static_text {
 					title = bind 'previewText',
 					fill_horizontal = 1,
-					-- previewText emits at most seven lines and the destination
-					-- path wraps on its own. Too small a value clips silently, and
-					-- what got clipped was the Cover line and the warning that the
-					-- album's sort order is about to break.
 					height_in_lines = 8,
 				},
 			},

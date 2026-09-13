@@ -1,21 +1,4 @@
---[[
-Slug derivation and filename padding.
-
-Pure Lua on purpose: no `Lr*` imports, so this can be exercised under a plain
-`lua` interpreter (see ../DEVELOPMENT.md). Together with HugoGalleryFrontMatter these
-are the two modules that can silently corrupt an album, which is exactly why
-they are testable outside Lightroom.
-]]
-
 local Slug = {}
-
--- Transliteration table. The keys are literal UTF-8 byte sequences; gsub treats
--- them as plain substrings because no byte above 127 is a Lua pattern magic
--- character. Applied before string.lower, which only folds ASCII A-Z.
---
--- Two rules, not one: letters that are letters in their own right expand
--- (ü -> ue, ø -> oe, å -> aa), while plain diacritics are stripped
--- (é -> e), so "Brüssels" becomes "bruessels" rather than "brssels".
 local TRANSLITERATE = {
 	['Ä'] = 'ae', ['ä'] = 'ae', ['Ö'] = 'oe', ['ö'] = 'oe',
 	['Ü'] = 'ue', ['ü'] = 'ue', ['ß'] = 'ss',
@@ -35,13 +18,8 @@ local TRANSLITERATE = {
 	['Ý'] = 'y', ['ý'] = 'y',
 }
 
--- "Brüssels" -> "bruessels";  'Brüssels & Co: "day one"' -> "bruessels-co-day-one"
 function Slug.slugify( text )
 	if type( text ) ~= 'string' then return '' end
-	-- One pass over the UTF-8 sequences, with the table as the replacement: gsub
-	-- leaves a sequence the table has no entry for alone, and the [^a-z0-9] pass
-	-- below collapses it. Looping the table instead meant ~60 full scans and 60
-	-- allocations per keystroke.
 	local s = text:gsub( '[\128-\255][\128-\191]*', TRANSLITERATE )
 	s = s:lower()
 	s = s:gsub( '[^a-z0-9]+', '-' )
@@ -49,27 +27,10 @@ function Slug.slugify( text )
 	return s
 end
 
--- The slug becomes the album's directory name and the stem of every
--- filename in it, so keep it to what Hugo and the shell both handle plainly.
 function Slug.isValid( slug )
 	return type( slug ) == 'string' and slug:match( '^[a-z0-9][a-z0-9%-]*$' ) ~= nil
 end
 
---[[
-Numbering for one export.
-
-Filenames set the album's default display order (sort_by: Name), so they must be
-zero-padded or "venice-10" sorts before "venice-2". Always at least two digits:
-42 photos -> 01..42, 120 photos -> 001..120.
-
-When adding to an album that already exists, `existing` carries its highest
-number and the width it uses, so new photos continue the sequence in the same
-shape rather than colliding with or reformatting what is there.
-
-`widthGrew` flags the one case this cannot paper over: an album already numbered
-01..99 that grows past 99 needs three digits, and "venice-100" then sorts before
-"venice-99". The caller warns rather than silently renaming the existing files.
-]]
 function Slug.numbering( newCount, existing )
 	local offset = existing and existing.highest or 0
 	local existingWidth = ( existing and existing.width ~= 0 ) and existing.width or nil
@@ -81,15 +42,6 @@ function Slug.numbering( newCount, existing )
 	}
 end
 
---[[
-The other direction: a readable title from a slug.
-
-The slug is what the Export dialog asks for, because it is what identifies the
-album, so the title is offered as a starting point rather than demanded. Every
-word is capitalised, including short ones - "best-of" becomes "Best Of" rather
-than "Best of". Predictable beats clever here: the field is editable, and a rule
-with exceptions is one you cannot guess from the outside.
-]]
 function Slug.titleFromSlug( slug )
 	if type( slug ) ~= 'string' then return '' end
 	local words = {}

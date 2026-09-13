@@ -1,38 +1,16 @@
---[[
-The Plug-in Manager panel: where the site is configured, plus what the plug-in
-is and where it came from.
-
-These settings live here rather than in the Export dialog because they are
-properties of the machine and the site, not of an album - set once per clone,
-then never touched again.
-]]
-
 local LrDialogs = import 'LrDialogs'
 local LrHttp    = import 'LrHttp'
 local LrTasks   = import 'LrTasks'
 local LrView    = import 'LrView'
-
 local Prefs = require 'HugoGalleryPrefs'
 local Repo  = require 'HugoGalleryRepo'
 local log   = require 'HugoGalleryLog'
-
 local PROJECT_URL = 'https://github.com/agiagoulas/hugo-gallery-lightroom-export-plugin'
 local THEME_URL   = 'https://github.com/nicokaiser/hugo-theme-gallery'
-
--- A stable identity to remove by; see the observer block below.
 local OBSERVER_KEY = {}
-
 local Info = {}
 
--- Repo.validatePaths stats the file system, which can yield, so it is never
--- called straight from an observer - see HugoGalleryExportDialogSections for the
--- longer version of why.
 local function refreshStatus( propertyTable )
-	-- Snapshot first. The field writes to prefs on every keystroke, so a dozen of
-	-- these overlap while a path is typed; without this the panel settles on
-	-- whichever FINISHED last, which is not the same as the one the field now
-	-- holds - and the "Looks good" line could name a path that was never checked,
-	-- because configuredPath() was read again after the yield.
 	local path = Repo.configuredPath()
 
 	LrTasks.startAsyncTask( function()
@@ -63,11 +41,6 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 	propertyTable.repoStatus = ''
 	refreshStatus( propertyTable )
 
-	-- prefs is a session-lifetime table, and this function runs again every time
-	-- the panel is shown. Without a stable key to remove by, each visit added
-	-- another set of observers, so after a few visits one keystroke in Site
-	-- folder fanned out into a dozen filesystem sweeps - most of them writing
-	-- into property tables belonging to closed dialogs.
 	for _, key in ipairs { 'repoPath', 'albumsFolder' } do
 		prefs:removeObserver( key, OBSERVER_KEY )
 		prefs:addObserver( key, OBSERVER_KEY, function() refreshStatus( propertyTable ) end )
@@ -76,7 +49,6 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 	local function link( title, url )
 		return f:push_button {
 			title = title,
-			-- Opening a browser yields, so it needs a task of its own.
 			action = function()
 				LrTasks.startAsyncTask( function() LrHttp.openUrlInBrowser( url ) end )
 			end,
@@ -86,12 +58,9 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 	return {
 		{
 			title = 'Hugo site',
-
 			f:row {
 				f:static_text { title = 'Site folder:', alignment = 'right', width = share 'w' },
 				f:edit_field {
-					-- Bound straight to the preference, so it is stored the
-					-- moment it is typed - there is no OK button here to save on.
 					value = pref 'repoPath',
 					immediate = true,
 					fill_horizontal = 1,
@@ -100,7 +69,6 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 				f:push_button {
 					title = 'Choose...',
 					action = function()
-						-- Modal panels yield too.
 						LrTasks.startAsyncTask( function()
 							local chosen = LrDialogs.runOpenPanel {
 								title = 'Choose your Hugo site folder',
@@ -115,7 +83,6 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 					end,
 				},
 			},
-
 			f:row {
 				f:static_text { title = 'Albums in:', alignment = 'right', width = share 'w' },
 				f:edit_field {
@@ -128,19 +95,14 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 				},
 				f:static_text { title = 'each album becomes <this>/<slug>/index.md' },
 			},
-
 			f:row {
 				f:static_text { title = '', width = share 'w' },
 				f:static_text { title = bind 'repoStatus', fill_horizontal = 1, height_in_lines = 2 },
 			},
-
 			f:row {
 				f:static_text { title = '', width = share 'w' },
 				f:push_button {
 					title = 'Test git',
-					-- Runs the two command shapes the plug-in builds and shows both
-					-- verbatim. Mainly there so a Windows tester can confirm the
-					-- quoting without a debugger - see docs/windows-port.md.
 					action = function()
 						LrTasks.startAsyncTask( function()
 							local ok, report = Repo.diagnose()
@@ -157,7 +119,6 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 
 		{
 			title = 'Export',
-
 			f:row {
 				f:static_text { title = 'Short edge:', alignment = 'right', width = share 'w' },
 				f:edit_field {
@@ -174,7 +135,6 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 				f:edit_field { value = pref 'jpegQuality', immediate = true, width_in_chars = 4 },
 				f:static_text { title = '(1-100)' },
 			},
-
 			f:row {
 				f:static_text { title = '', width = share 'w' },
 				f:checkbox {
@@ -194,7 +154,6 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 
 		{
 			title = 'About',
-
 			f:static_text {
 				title = 'Turns a Lightroom selection into a finished album on a Hugo site. It\n'
 					.. 'exports the photos at the right size, names them in order, and writes\n'
@@ -202,9 +161,7 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 					.. '"the album is on the site".',
 				height_in_lines = 4,
 			},
-
 			f:spacer { height = 8 },
-
 			f:static_text {
 				title = 'An album titled Venice becomes venice/, holding venice-01.jpg through\n'
 					.. 'venice-42.jpg and an index.md carrying the title, date, categories,\n'
@@ -213,9 +170,7 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 					.. 'photos keep the EXIF the lightbox captions are built from.',
 				height_in_lines = 5,
 			},
-
 			f:spacer { height = 8 },
-
 			f:static_text {
 				title = 'Your RAWs are untouched - these are exports like any other. And nothing\n'
 					.. 'is pushed: on a git-deployed site pushing is the deploy, so that stays a\n'
@@ -223,21 +178,15 @@ function Info.sectionsForTopOfDialog( f, propertyTable )
 					.. 'and commit, and only if you ask it to.',
 				height_in_lines = 4,
 			},
-
 			f:spacer { height = 8 },
-
 			f:static_text {
 				title = 'Needs a Hugo site built on hugo-theme-gallery, in a git working copy.\n'
 					.. 'Set the site folder above; everything else already has a sensible default.',
 				height_in_lines = 2,
 			},
-
 			f:spacer { height = 8 },
-
 			f:static_text { title = '© 2026 Alexander Giagoulas - MIT Licence' },
-
 			f:spacer { height = 8 },
-
 			f:row {
 				link( 'Source and documentation', PROJECT_URL ),
 				link( 'hugo-theme-gallery', THEME_URL ),

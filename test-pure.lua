@@ -1,10 +1,3 @@
---[[
-Exercises the two modules that have no Lightroom dependency - the two that can
-silently corrupt content/ if their escaping or padding is wrong.
-
-	luajit test-pure.lua      (brew install luajit)
-]]
-
 package.path = './HugoGalleryExportPlugin.lrdevplugin/?.lua;' .. package.path
 
 local Slug        = require 'HugoGallerySlug'
@@ -22,8 +15,6 @@ local function eq( got, want, label )
 	end
 end
 
--- Slugs -----------------------------------------------------------------------
-
 eq( Slug.slugify( 'Venice' ), 'venice', 'plain title' )
 eq( Slug.slugify( 'Brüssels' ), 'bruessels', 'umlaut expands rather than being stripped' )
 eq( Slug.slugify( 'Las Vegas | Nevada' ), 'las-vegas-nevada', 'punctuation collapses' )
@@ -34,14 +25,12 @@ eq( Slug.slugify( 'Køge Ærø Åland' ), 'koege-aeroe-aaland', 'nordic letters 
 eq( Slug.slugify( 'Straße' ), 'strasse', 'eszett' )
 eq( Slug.slugify( '' ), '', 'empty' )
 eq( Slug.slugify( nil ), '', 'nil' )
-
 eq( Slug.isValid( 'venice' ), true, 'valid slug' )
 eq( Slug.isValid( 'Venice' ), false, 'uppercase rejected' )
 eq( Slug.isValid( '-venice' ), false, 'leading hyphen rejected' )
 eq( Slug.isValid( 'ven ice' ), false, 'space rejected' )
 eq( Slug.isValid( '' ), false, 'empty rejected' )
 
--- Padding: the whole point is that venice-10 must not sort before venice-2.
 local function names( count, existing )
 	local n = Slug.numbering( count, existing )
 	return function( i ) return Slug.fileName( 'venice', i, n ) end, n
@@ -53,7 +42,6 @@ eq( names( 120 )( 7 ), 'venice-007.jpg', '120 photos -> 3 digits' )
 local ten = names( 10 )
 eq( ten( 2 ) < ten( 10 ), true, 'padded names sort numerically' )
 
--- Adding to an existing album continues the sequence in its own shape.
 local add = names( 3, { highest = 42, width = 2 } )
 eq( add( 1 ), 'venice-43.jpg', 'append: continues after the highest existing number' )
 eq( add( 3 ), 'venice-45.jpg', 'append: keeps counting' )
@@ -63,11 +51,6 @@ eq( select( 2, names( 5, { highest = 98, width = 2 } ) ).widthGrew, true,
 	'append: flags the 99 -> 100 case, where padding can no longer keep the order' )
 eq( select( 2, names( 5, { highest = 40, width = 2 } ) ).widthGrew, false,
 	'append: no false alarm when the width is unchanged' )
-
--- Title from slug ---------------------------------------------------------------
---
--- The dialog asks for the slug and offers a title, not the other way round.
-
 eq( Slug.titleFromSlug( 'test-hello' ), 'Test Hello', 'title: hyphens become spaces' )
 eq( Slug.titleFromSlug( 'venice' ), 'Venice', 'title: a single word' )
 eq( Slug.titleFromSlug( 'dolomites-2026' ), 'Dolomites 2026', 'title: digits are left alone' )
@@ -76,9 +59,6 @@ eq( Slug.titleFromSlug( 'bruessels' ), 'Bruessels', 'title: no attempt to undo t
 eq( Slug.titleFromSlug( '' ), '', 'title: empty slug' )
 eq( Slug.titleFromSlug( nil ), '', 'title: nil' )
 eq( Slug.titleFromSlug( 'a--b' ), 'A B', 'title: a doubled hyphen does not make an empty word' )
-
--- Front matter ----------------------------------------------------------------
-
 eq( FrontMatter.render {
 	date = '2026-05-02', title = 'Venice', categories = { 'travel', '2026' },
 	lat = 45.4408, lng = 12.3155, description = 'A long weekend in Venice.',
@@ -107,7 +87,6 @@ sort_by: Name
 ---
 ]], 'optional keys omitted entirely, no empty categories or resources' )
 
--- The reason quoting is unconditional.
 local hostile = FrontMatter.render {
 	date = '2026-01-01',
 	title = '#1: a "great" trip\\home',
@@ -118,15 +97,12 @@ eq( hostile:match( '\ntitle: (.-)\n' ), '"#1: a \\"great\\" trip\\\\home"', 'tit
 eq( hostile:match( '\ndescription: (.-)\n' ), '"line one line two tabbed"', 'newlines flattened' )
 eq( hostile:match( '\ncategories: (.-)\n' ), '["- weird", "ok"]', 'categories quoted' )
 
--- Half a coordinate pair would put the album at the equator.
 eq( FrontMatter.render { date = '2026-01-01', title = 'X', lat = 1.0 }:match( 'lat' ), nil,
 	'lat without lng is dropped' )
 
 local cats = FrontMatter.splitCategories( ' travel , , 2026,' )
 eq( #cats .. ':' .. table.concat( cats, '|' ), '2:travel|2026', 'category splitting trims and drops blanks' )
 eq( #FrontMatter.splitCategories( '' ), 0, 'empty category string' )
-
--- Coordinates ------------------------------------------------------------------
 
 local function coords( text, label )
 	local lat, lng = Coords.parse( text )
@@ -137,17 +113,13 @@ eq( coords( '45.4408, 12.3155' ), '45.4408, 12.3155', 'decimal pair with comma' 
 eq( coords( '45.4408 12.3155' ), '45.4408, 12.3155', 'decimal pair with space' )
 eq( coords( '  45.4408,12.3155  ' ), '45.4408, 12.3155', 'surrounding whitespace' )
 eq( coords( '-33.8688, 151.2093' ), '-33.8688, 151.2093', 'southern hemisphere' )
-
 eq( coords( '46°32\'25.8"N 12°08\'08.5"E' ), '46.5405, 12.1357', 'DMS' )
 eq( coords( '46°32\'25.8"S 12°08\'08.5"W' ), '-46.5405, -12.1357', 'DMS south/west' )
 eq( coords( '46°N 12°E' ), '46.0000, 12.0000', 'degrees only' )
-
--- Map links are deliberately not accepted: paste the coordinates themselves.
 eq( coords( 'https://www.google.com/maps/@46.5405,12.1357,14z' ), 'nil', 'google url rejected' )
 eq( coords( 'https://maps.apple.com/?ll=46.5405,12.1357&z=14' ), 'nil', 'apple url rejected' )
 eq( coords( 'https://www.google.com/maps/place/X/@40.0,10.0,17z/data=!3d46.5!4d12.1' ), 'nil',
 	'google place url rejected' )
-
 eq( coords( '' ), 'nil', 'empty' )
 eq( coords( '   ' ), 'nil', 'blank' )
 eq( coords( nil ), 'nil', 'nil' )
@@ -155,16 +127,10 @@ eq( coords( 'Venice' ), 'nil', 'place name is not coordinates' )
 eq( coords( '91.0, 12.0' ), 'nil', 'latitude out of range' )
 eq( coords( '45.0, 181.0' ), 'nil', 'longitude out of range' )
 eq( coords( '45.4408' ), 'nil', 'a single number is not a pair' )
-
 eq( Coords.format( nil, nil ), '', 'format with no coordinates' )
 eq( Coords.mapUrl( 46.5405, 12.1357 ):match( '^https://www%.openstreetmap%.org/' ) ~= nil, true,
 	'map url' )
 
-
--- Updating an existing album ---------------------------------------------------
-
--- Modelled on a real hand-edited album: manual ordering, a featured flag, and
--- per-photo captions. None of it is anything the plugin knows about.
 local EXISTING = [[
 ---
 date: 2026-08-25
@@ -209,24 +175,14 @@ eq( merged:match( '\ndate: (.-)\n' ), '2026-09-01', 'merge updates the date' )
 eq( merged:match( '\ncategories: (.-)\n' ), '["travel"]', 'merge adds a key the file lacked' )
 eq( merged:match( 'Some prose under the front matter.' ) ~= nil, true, 'merge keeps the body' )
 eq( merged:match( '^%-%-%-\n' ) ~= nil, true, 'merge still opens with front matter' )
-
--- Key order is the file's own, so the diff stays small.
 eq( merged:match( '\nsort_by:.*\nfeatured:' ) ~= nil, true, 'merge preserves key order' )
-
--- An empty field means "leave it alone", never "delete it": the dialog prefills
--- from the file, so clearing one there must not silently drop it here.
 local kept = FrontMatter.merge( EXISTING, { title = 'X' } )
 eq( kept:match( '\ndescription: (.-)\n' ), 'A curated set of favorites.', 'merge never deletes' )
 eq( kept:match( '\ndate: (.-)\n' ), '2026-08-25', 'merge leaves an empty date alone' )
-
--- A file with no resources block does get one, since there is nothing to lose.
 local bare = FrontMatter.merge( '---\ntitle: Bare\n---\n', { cover = 'bare-01.jpg' } )
 eq( bare:match( 'resources:\n  %- src: (.-)\n' ), 'bare-01.jpg', 'merge adds resources when absent' )
-
 eq( FrontMatter.merge( 'no front matter here\n', { title = 'X' } ), nil, 'merge refuses a file it cannot parse' )
 eq( FrontMatter.parse( '---\ntitle: Unclosed\n' ), nil, 'parse refuses unterminated front matter' )
-
--- Prefilling the dialog ---------------------------------------------------------
 
 local values = FrontMatter.readValues( [[
 ---
@@ -246,13 +202,6 @@ eq( values.lng, 12.3155, 'readValues: lng' )
 eq( values.description, 'A trip.', 'readValues: unquoted scalar' )
 eq( values.hasResources, false, 'readValues: reports a missing resources block' )
 
-
--- Blocks the merge must not touch ----------------------------------------------
---
--- This is the failure the merge exists to prevent, and it used to be the one it
--- caused: a folded scalar came back from readValues as ">" and merge replaced
--- all three lines with `description: ">"`.
-
 local FOLDED = '---\ntitle: Old\ndescription: >\n  a long description that\n  runs over two lines.\n---\n'
 
 local foldedOut, foldedSkipped = FrontMatter.merge( FOLDED, {
@@ -262,33 +211,20 @@ eq( foldedOut:match( 'description: >\n  a long description that\n  runs over two
 	true, 'multi-line: a folded scalar survives byte for byte' )
 eq( foldedOut:match( '\ntitle: (.-)\n' ), '"New"', 'multi-line: single-line keys are still updated' )
 eq( table.concat( foldedSkipped, ',' ), 'description', 'multi-line: merge reports what it left alone' )
-
 local foldedValues = FrontMatter.readValues( FOLDED )
 eq( foldedValues.description, nil, 'multi-line: readValues hands the dialog nil, never ">"' )
 eq( foldedValues.unmanaged.description, true, 'multi-line: readValues names the unmanaged key' )
 eq( foldedValues.title, 'Old', 'multi-line: neighbouring single-line keys still read' )
-
--- A block-scalar header with nothing under it: #lines is 1, so only the header
--- pattern catches it.
 local bareHeader = FrontMatter.merge( '---\ndescription: >\n---\n', { description = 'x' } )
 eq( bareHeader:match( '\ndescription: (.-)\n' ), '>', 'multi-line: a bare > header is left alone' )
 eq( FrontMatter.merge( '---\ndescription: |-\n  kept\n---\n', { description = 'x' } )
 	:match( 'description: |%-\n  kept\n' ) ~= nil, true, 'multi-line: literal block with chomp' )
-
--- List-form categories are a multi-line block like any other.
 local listCats = FrontMatter.merge( '---\ncategories:\n  - travel\n  - 2026\n---\n',
 	{ categories = { 'other' } } )
 eq( listCats:match( 'categories:\n  %- travel\n  %- 2026\n' ) ~= nil, true,
 	'multi-line: list-form categories survive' )
-
 eq( select( 2, FrontMatter.merge( '---\ndescription: one line\n---\n', { description = 'two' } ) )[ 1 ],
 	nil, 'multi-line: a single-line block is still replaced, and not reported as skipped' )
-
--- Line endings ------------------------------------------------------------------
---
--- Stripping the \r instead of writing it back would rewrite every line in the
--- file, turning an export into a whole-file diff on a Windows contributor's repo.
-
 local CRLF = '---\r\ntitle: T\r\ndescription: old\r\n---\r\n\r\nBody text.\r\n'
 eq( FrontMatter.parse( CRLF ) ~= nil, true, 'CRLF: parses at all' )
 local crlfOut = FrontMatter.merge( CRLF, { title = 'T', description = 'new' } )
@@ -297,23 +233,13 @@ eq( crlfOut:match( 'Body text.' ) ~= nil, true, 'CRLF: the body survives' )
 eq( crlfOut:match( 'description: (.-)\r' ), '"new"', 'CRLF: the value is still updated' )
 eq( FrontMatter.merge( '---\ntitle: T\n---\n', { title = 'T' } ):find( '\r' ), nil,
 	'CRLF: an LF file stays an LF file' )
-
--- sort_by ------------------------------------------------------------------------
-
 eq( FrontMatter.merge( '---\ntitle: B\n---\n', { title = 'B' } ):match( 'sort_by: Name' ) ~= nil,
 	true, 'sort_by is added when absent - the filenames exist to be the running order' )
-
--- Repeated top-level keys ---------------------------------------------------------
-
 local dup = FrontMatter.merge( '---\ntitle: A\ndescription: x\ntitle: B\n---\n', { title = 'C' } )
 eq( select( 2, dup:gsub( 'title:', '' ) ), 2, 'duplicate keys: still exactly two title lines out' )
 eq( dup:match( '\ntitle: (.-)\n' ), '"C"', 'duplicate keys: the first one is the one updated' )
 eq( dup:match( 'title: B' ) ~= nil, true, 'duplicate keys: the repeat is preserved where it was' )
-
--- FrontMatter.plan ------------------------------------------------------------------
---
--- The decision that can destroy a hand-written file, table-driven.
-
+    
 local function planOf( existing, album )
 	local action, contents = FrontMatter.plan( existing, album or { title = 'X', date = '2026-01-01' } )
 	return action, contents
