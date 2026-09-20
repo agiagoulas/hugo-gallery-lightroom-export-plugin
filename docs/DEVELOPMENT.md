@@ -3,7 +3,7 @@
 ## Layout
 
 ```
-HugoGalleryExportPlugin.lrdevplugin/
+HugoGalleryExportPlugin.lrplugin/
   Info.lua                             manifest
   HugoGalleryExportServiceProvider.lua   locked export settings + processRenderedPhotos
   HugoGalleryExportDialogSections.lua    the Export dialog section
@@ -126,7 +126,7 @@ otherwise take the whole Export dialog down with it.
 
 ## Releasing
 
-Bump `VERSION` in `HugoGalleryExportPlugin.lrdevplugin/Info.lua` and push to main. The release workflow reads
+Bump `VERSION` in `HugoGalleryExportPlugin.lrplugin/Info.lua` and push to main. The release workflow reads
 that table — by evaluating the file, the way Lightroom does, rather than pattern-matching the
 source — and if the version has no tag yet it runs the suites, packages the plug-in folder and
 cuts the release with generated notes.

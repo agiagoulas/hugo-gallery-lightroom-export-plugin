@@ -14,7 +14,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y luajit
       - id: version
         run: |
-          v=$(luajit -e 'local i = dofile("HugoGalleryExportPlugin.lrdevplugin/Info.lua")
+          v=$(luajit -e 'local i = dofile("HugoGalleryExportPlugin.lrplugin/Info.lua")
             io.write(("%d.%d.%d"):format(i.VERSION.major, i.VERSION.minor, i.VERSION.revision))')
           echo "tag=v$v" >> "$GITHUB_OUTPUT"
           echo "Manifest version: v$v"
@@ -30,7 +30,7 @@ jobs:
         run: make test
       - if: steps.check.outputs.release == 'true'
         run: |
-          zip -r "HugoGalleryExportPlugin-${{ steps.version.outputs.tag }}.zip" HugoGalleryExportPlugin.lrdevplugin \
+          zip -r "HugoGalleryExportPlugin-${{ steps.version.outputs.tag }}.zip" HugoGalleryExportPlugin.lrplugin \
             -x '*.DS_Store'
       - if: steps.check.outputs.release == 'true'
         env:

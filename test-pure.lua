@@ -1,4 +1,4 @@
-package.path = './HugoGalleryExportPlugin.lrdevplugin/?.lua;' .. package.path
+package.path = './HugoGalleryExportPlugin.lrplugin/?.lua;' .. package.path
 
 local Slug        = require 'HugoGallerySlug'
 local FrontMatter = require 'HugoGalleryFrontMatter'

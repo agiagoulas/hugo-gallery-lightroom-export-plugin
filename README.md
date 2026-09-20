@@ -29,9 +29,9 @@ button in the Plug-in Manager.
 ## Install
 
 1. Download `HugoGalleryExportPlugin-vX.Y.Z.zip` from the [latest release][releases] and unzip it.
-   It contains the `HugoGalleryExportPlugin.lrdevplugin` folder, ready to use. (Cloning works too —
+   It contains the `HugoGalleryExportPlugin.lrplugin` folder, ready to use. (Cloning works too —
    the plugin is then that folder **inside** the repository, not the folder you cloned.)
-2. **File → Plug-in Manager → Add**, select that `HugoGalleryExportPlugin.lrdevplugin` folder.
+2. **File → Plug-in Manager → Add**, select that `HugoGalleryExportPlugin.lrplugin` folder.
 3. In the same window, set **Site folder**. The panel tells you straight away whether it found a
    Hugo config, a git repo and your albums folder.
 4. Select photos → **File → Export** → *Export To: Hugo Gallery*.

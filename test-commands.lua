@@ -1,4 +1,4 @@
-package.path = './HugoGalleryExportPlugin.lrdevplugin/?.lua;' .. package.path
+package.path = './HugoGalleryExportPlugin.lrplugin/?.lua;' .. package.path
 
 local failures = 0
 local function eq( got, want, label )
